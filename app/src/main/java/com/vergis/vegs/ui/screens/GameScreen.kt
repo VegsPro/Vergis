@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.GameViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,24 +33,61 @@ fun GameScreen(
     var answerText by remember { mutableStateOf("") }
     var hasSubmitted by remember { mutableStateOf(false) }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    var lastAnswerCount by remember { mutableIntStateOf(-1) }
+
     LaunchedEffect(roomId) {
         viewModel.observe(roomId)
     }
 
-    // Reset local state on new round
     LaunchedEffect(room?.currentRound) {
         answerText = ""
         hasSubmitted = false
+        lastAnswerCount = -1
+    }
+
+    // In-app уведомление: N из M ответили — при каждом новом ответе
+    val answerCount = room?.answers?.size ?: 0
+    val playerCount = room?.players?.size ?: 0
+    LaunchedEffect(answerCount, playerCount, room?.currentRound) {
+        if (playerCount <= 0) return@LaunchedEffect
+        if (lastAnswerCount < 0) {
+            lastAnswerCount = answerCount
+            return@LaunchedEffect
+        }
+        if (answerCount > lastAnswerCount && answerCount > 0) {
+            lastAnswerCount = answerCount
+            val msg = if (answerCount >= playerCount) {
+                "Все ответили! $answerCount из $playerCount"
+            } else {
+                "Ответили $answerCount из $playerCount"
+            }
+            snackbarHostState.showSnackbar(
+                message = msg,
+                duration = SnackbarDuration.Short
+            )
+        } else {
+            lastAnswerCount = answerCount
+        }
     }
 
     val r = room
     val allAnswered = r != null && r.players.isNotEmpty() && r.answers.size >= r.players.size
     val iAmReady = r?.readyForNext?.get(myUid) == true
     val readyCount = r?.readyForNext?.size ?: 0
-    val playerCount = r?.players?.size ?: 0
 
     Scaffold(
         containerColor = DarkBg,
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = SurfaceGlass,
+                    contentColor = TextPrimary,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -83,7 +121,17 @@ fun GameScreen(
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            // Question card
+            // Живой счётчик ответов
+            if (!allAnswered && r.status == "playing") {
+                Text(
+                    text = "Ответили ${r.answers.size} из ${r.players.size}",
+                    color = Accent,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = SurfaceGlass),
                 shape = RoundedCornerShape(16.dp),
@@ -104,16 +152,15 @@ fun GameScreen(
             Spacer(Modifier.height(20.dp))
 
             if (!allAnswered) {
-                // Input phase
                 val alreadyAnswered = r.answers.containsKey(myUid)
                 if (alreadyAnswered || hasSubmitted) {
                     Text(
-                        "Ответ отправлен. Ждём остальных (${r.answers.size}/${playerCount})...",
+                        "Ответ отправлен. Ждём остальных (${r.answers.size}/${r.players.size})...",
                         color = TextSecondary,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
                     LinearProgressIndicator(
-                        progress = { r.answers.size.toFloat() / playerCount.coerceAtLeast(1) },
+                        progress = { r.answers.size.toFloat() / r.players.size.coerceAtLeast(1) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp)
@@ -156,7 +203,6 @@ fun GameScreen(
                     }
                 }
             } else {
-                // Results phase
                 Text(
                     "Ответы всех игроков",
                     color = TextPrimary,
@@ -194,7 +240,7 @@ fun GameScreen(
 
                 if (iAmReady) {
                     Text(
-                        "Готовы к следующему: $readyCount / $playerCount",
+                        "Готовы к следующему: $readyCount / ${r.players.size}",
                         color = Success,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )

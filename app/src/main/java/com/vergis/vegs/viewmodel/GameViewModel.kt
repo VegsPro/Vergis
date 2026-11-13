@@ -64,7 +64,7 @@ class GameViewModel : ViewModel() {
         viewModelScope.launch {
             _loading.value = true
             try {
-                val question = gemini.generateQuestion(room.theme, 1, room.players.size)
+                val question = gemini.generateQuestion(room.theme, 1, room.players.size, room.usedQuestions)
                 repo.startGame(room.id, question)
             } catch (e: Exception) {
                 _error.value = e.message
@@ -81,7 +81,7 @@ class GameViewModel : ViewModel() {
             _loading.value = true
             try {
                 val next = room.currentRound + 1
-                val question = gemini.generateQuestion(room.theme, next, room.players.size)
+                val question = gemini.generateQuestion(room.theme, next, room.players.size, room.usedQuestions)
                 repo.advanceRound(room.id, next, question)
                 lastProcessedRound = next
             } catch (e: Exception) {

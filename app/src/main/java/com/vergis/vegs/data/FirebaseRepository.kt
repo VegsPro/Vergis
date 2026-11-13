@@ -108,7 +108,8 @@ class FirebaseRepository {
                 "createdAt" to System.currentTimeMillis(),
                 "players" to mapOf(user.uid to player),
                 "answers" to emptyMap<String, String>(),
-                "readyForNext" to emptyMap<String, Boolean>()
+                "readyForNext" to emptyMap<String, Boolean>(),
+                "usedQuestions" to emptyList<String>()
             )
             db.child("rooms").child(roomId).setValue(room).await()
             Result.success(roomId)
@@ -153,12 +154,16 @@ class FirebaseRepository {
     }
 
     suspend fun startGame(roomId: String, question: String) {
+        val usedSnap = db.child("rooms").child(roomId).child("usedQuestions").get().await()
+        val used = usedSnap.children.mapNotNull { it.getValue(String::class.java) }.toMutableList()
+        if (question.isNotBlank() && question !in used) used.add(question)
         val updates = mapOf(
             "status" to "playing",
             "currentRound" to 1,
             "currentQuestion" to question,
             "answers" to emptyMap<String, String>(),
-            "readyForNext" to emptyMap<String, Boolean>()
+            "readyForNext" to emptyMap<String, Boolean>(),
+            "usedQuestions" to used
         )
         db.child("rooms").child(roomId).updateChildren(updates).await()
     }
@@ -174,11 +179,15 @@ class FirebaseRepository {
     }
 
     suspend fun advanceRound(roomId: String, nextRound: Int, question: String) {
+        val usedSnap = db.child("rooms").child(roomId).child("usedQuestions").get().await()
+        val used = usedSnap.children.mapNotNull { it.getValue(String::class.java) }.toMutableList()
+        if (question.isNotBlank() && question !in used) used.add(question)
         val updates = mapOf(
             "currentRound" to nextRound,
             "currentQuestion" to question,
             "answers" to emptyMap<String, String>(),
-            "readyForNext" to emptyMap<String, Boolean>()
+            "readyForNext" to emptyMap<String, Boolean>(),
+            "usedQuestions" to used
         )
         db.child("rooms").child(roomId).updateChildren(updates).await()
     }
@@ -216,6 +225,11 @@ class FirebaseRepository {
             ready[uid] = r.getValue(Boolean::class.java) ?: false
         }
 
+        val usedQuestions = mutableListOf<String>()
+        for (u in snapshot.child("usedQuestions").children) {
+            u.getValue(String::class.java)?.let { usedQuestions.add(it) }
+        }
+
         return RoomInfo(
             id = id,
             name = name,
@@ -229,7 +243,8 @@ class FirebaseRepository {
             createdAt = createdAt,
             players = players,
             answers = answers,
-            readyForNext = ready
+            readyForNext = ready,
+            usedQuestions = usedQuestions
         )
     }
 }

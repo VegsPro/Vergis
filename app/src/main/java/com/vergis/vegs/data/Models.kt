@@ -13,7 +13,8 @@ data class RoomInfo(
     val createdAt: Long = System.currentTimeMillis(),
     val players: Map<String, PlayerInfo> = emptyMap(),
     val answers: Map<String, String> = emptyMap(),
-    val readyForNext: Map<String, Boolean> = emptyMap()
+    val readyForNext: Map<String, Boolean> = emptyMap(),
+    val usedQuestions: List<String> = emptyList()
 )
 
 data class PlayerInfo(
