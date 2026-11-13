@@ -45,6 +45,13 @@ fun RoomsScreen(
     val displayName by authViewModel.displayName.collectAsState()
 
     var passwordDialogRoom by remember { mutableStateOf<RoomInfo?>(null) }
+
+    LaunchedEffect(joinError) {
+        if (joinError != null) {
+            kotlinx.coroutines.delay(3500)
+            viewModel.clearJoinError()
+        }
+    }
     var passwordInput by remember { mutableStateOf("") }
 
     Scaffold(

@@ -14,7 +14,8 @@ data class RoomInfo(
     val players: Map<String, PlayerInfo> = emptyMap(),
     val answers: Map<String, String> = emptyMap(),
     val readyForNext: Map<String, Boolean> = emptyMap(),
-    val usedQuestions: List<String> = emptyList()
+    val usedQuestions: List<String> = emptyList(),
+    val lastActivityAt: Long = System.currentTimeMillis()
 )
 
 data class PlayerInfo(
