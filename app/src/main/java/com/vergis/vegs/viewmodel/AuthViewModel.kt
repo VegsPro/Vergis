@@ -20,16 +20,8 @@ class AuthViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    private val _displayName = MutableStateFlow("")
+    private val _displayName = MutableStateFlow(repo.currentUser?.displayName.orEmpty())
     val displayName: StateFlow<String> = _displayName.asStateFlow()
-
-    init {
-        repo.currentUser?.let { user ->
-            viewModelScope.launch {
-                _displayName.value = repo.getDisplayName(user.uid)
-            }
-        }
-    }
 
     fun login(email: String, password: String) {
         viewModelScope.launch {
@@ -39,7 +31,7 @@ class AuthViewModel : ViewModel() {
             _loading.value = false
             result.onSuccess {
                 _isLoggedIn.value = true
-                _displayName.value = repo.getDisplayName(it.uid)
+                _displayName.value = repo.currentUser?.displayName.orEmpty()
             }.onFailure {
                 _error.value = it.message ?: "Ошибка входа"
             }
