@@ -118,16 +118,16 @@ class FirebaseRepository {
         return try {
             val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
             val profile = getUserProfile(user.uid)
-            val finalName = profile?.displayName?.takeIf { it.isNotBlank() }
-                ?: name.takeIf { it.isNotBlank() }
-                ?: user.displayName
+            val playerName = profile?.displayName?.takeIf { it.isNotBlank() }
+                ?: user.displayName?.takeIf { it.isNotBlank() }
                 ?: "Игрок"
+            val roomTitle = name.takeIf { it.isNotBlank() } ?: "Комната $playerName(a)"
             val avatar = profile?.avatarUrl ?: ""
             val ref = db.child("rooms").push()
             val id = ref.key ?: return Result.failure(Exception("Ошибка id"))
             val now = System.currentTimeMillis()
             val room = mapOf(
-                "name" to finalName,
+                "name" to roomTitle,
                 "creatorId" to user.uid,
                 "maxPlayers" to maxPlayers,
                 "theme" to theme,
@@ -140,7 +140,7 @@ class FirebaseRepository {
                 "players" to mapOf(
                     user.uid to mapOf(
                         "uid" to user.uid,
-                        "name" to finalName,
+                        "name" to playerName,
                         "avatarUrl" to avatar,
                         "joinedAt" to now
                     )
@@ -294,31 +294,45 @@ class FirebaseRepository {
     suspend fun uploadAvatar(bytes: ByteArray): Result<String> {
         return try {
             val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
-            val ref = storage.child("avatars").child("${user.uid}.jpg")
-            ref.putBytes(bytes).await()
-            val url = ref.downloadUrl.await().toString()
-            db.child("users").child(user.uid).child("avatarUrl").setValue(url).await()
-            val profile = UserProfileChangeRequest.Builder().setPhotoUri(Uri.parse(url)).build()
-            user.updateProfile(profile).await()
-            Result.success(url)
-        } catch (e: Exception) {
-            // fallback: base64 в RTDB (без Storage)
-            try {
-                val user = currentUser ?: return Result.failure(e)
-                val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                val dataUrl = "data:image/jpeg;base64,$b64"
-                // если слишком большой — не пишем
-                if (b64.length < 400_000) {
-                    db.child("users").child(user.uid).child("avatarUrl").setValue(dataUrl).await()
-                    Result.success(dataUrl)
-                } else {
-                    Result.failure(Exception("Файл слишком большой, включи Firebase Storage"))
+            val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            val body = okhttp3.FormBody.Builder()
+                .add("key", "be4f9cf74bf01c7e56308e8b707a00f1")
+                .add("image", b64)
+                .build()
+            val request = okhttp3.Request.Builder()
+                .url("https://api.imgbb.com/1/upload")
+                .post(body)
+                .build()
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            client.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return Result.failure(Exception("ImgBB: ${response.code}"))
                 }
-            } catch (e2: Exception) {
-                Result.failure(e2)
+                val json = org.json.JSONObject(raw)
+                if (!json.optBoolean("success", false)) {
+                    return Result.failure(Exception("ImgBB: загрузка не удалась"))
+                }
+                val url = json.getJSONObject("data").optString("display_url")
+                    .ifBlank { json.getJSONObject("data").optString("url") }
+                if (url.isBlank()) return Result.failure(Exception("ImgBB: нет URL"))
+                db.child("users").child(user.uid).child("avatarUrl").setValue(url).await()
+                try {
+                    val profile = UserProfileChangeRequest.Builder()
+                        .setPhotoUri(android.net.Uri.parse(url))
+                        .build()
+                    user.updateProfile(profile).await()
+                } catch (_: Exception) {}
+                Result.success(url)
             }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
+
 
     private fun parseRoom(snapshot: DataSnapshot): RoomInfo? {
         if (!snapshot.exists()) return null

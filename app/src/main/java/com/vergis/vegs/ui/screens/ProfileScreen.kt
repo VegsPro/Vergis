@@ -30,7 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.vergis.vegs.ui.components.GlassCard
 import com.vergis.vegs.ui.components.PrimaryGradientButton
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.AuthViewModel
@@ -49,8 +48,10 @@ fun ProfileScreen(
     val view = LocalView.current
     val context = LocalContext.current
 
-    var nameInput by remember { mutableStateOf(displayName) }
-    LaunchedEffect(displayName) { if (nameInput.isBlank()) nameInput = displayName }
+    var nameInput by remember { mutableStateOf("") }
+    LaunchedEffect(displayName) {
+        if (nameInput.isBlank() && displayName.isNotBlank()) nameInput = displayName
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -61,19 +62,13 @@ fun ProfileScreen(
                 @Suppress("DEPRECATION")
                 MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
             }
-            // compress ~512px jpeg
-            val scaled = Bitmap.createScaledBitmap(
-                bitmap,
-                512,
-                (512f * bitmap.height / bitmap.width).toInt().coerceAtLeast(1),
-                true
-            )
+            val w = 512
+            val h = (512f * bitmap.height / bitmap.width.coerceAtLeast(1)).toInt().coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(bitmap, w, h, true)
             val baos = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 75, baos)
+            scaled.compress(Bitmap.CompressFormat.JPEG, 80, baos)
             viewModel.uploadAvatar(baos.toByteArray())
-        } catch (e: Exception) {
-            // ignore
-        }
+        } catch (_: Exception) {}
     }
 
     Scaffold(
@@ -94,15 +89,15 @@ fun ProfileScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(20.dp),
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(Modifier.height(24.dp))
             Box(
                 Modifier
-                    .size(110.dp)
+                    .size(108.dp)
                     .clip(CircleShape)
                     .background(Brush.linearGradient(listOf(Color(0xFF1E3A8A), BluePrimary)))
-                    .border(2.dp, GlassStroke, CircleShape)
                     .clickable {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         picker.launch("image/*")
@@ -113,7 +108,7 @@ fun ProfileScreen(
                     AsyncImage(
                         model = avatarUrl,
                         contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
                         contentScale = ContentScale.Crop
                     )
                 } else {
@@ -127,51 +122,51 @@ fun ProfileScreen(
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
-                        .size(32.dp)
+                        .offset(x = (-2).dp, y = (-2).dp)
+                        .size(30.dp)
                         .clip(CircleShape)
-                        .background(BluePrimary),
+                        .background(BluePrimary)
+                        .border(2.dp, BgDeep, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.CameraAlt, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.CameraAlt, null, tint = Color.White, modifier = Modifier.size(15.dp))
                 }
             }
             Text(
                 "Нажми, чтобы сменить фото",
                 color = TextMuted,
                 fontSize = 12.sp,
-                modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
+                modifier = Modifier.padding(top = 10.dp, bottom = 28.dp)
             )
 
-            GlassCard(modifier = Modifier.fillMaxWidth(), radius = 16.dp) {
-                Text("Имя", color = TextMuted, fontSize = 12.sp)
-                Spacer(Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = nameInput,
-                    onValueChange = { nameInput = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = BlueBright,
-                        unfocusedBorderColor = GlassStroke,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = BlueBright
-                    )
+            Text("Имя", color = TextMuted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = nameInput,
+                onValueChange = { nameInput = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = BlueBright,
+                    unfocusedBorderColor = Color(0x33FFFFFF),
+                    cursorColor = BlueBright,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
                 )
-            }
+            )
 
             if (error != null) {
-                Text(error!!, color = Error, modifier = Modifier.padding(top = 12.dp))
+                Text(error!!, color = Error, modifier = Modifier.padding(top = 12.dp).fillMaxWidth(), fontSize = 13.sp)
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
             PrimaryGradientButton(
                 text = if (loading) "Сохраняем..." else "Сохранить",
                 enabled = !loading && nameInput.isNotBlank(),
-                onClick = {
-                    viewModel.updateName(nameInput) { onBack() }
-                }
+                onClick = { viewModel.updateName(nameInput) { onBack() } }
             )
         }
     }

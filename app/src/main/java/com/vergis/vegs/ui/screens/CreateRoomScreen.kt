@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vergis.vegs.data.DEFAULT_THEMES
-import com.vergis.vegs.ui.components.GlassCard
 import com.vergis.vegs.ui.components.PrimaryGradientButton
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.AuthViewModel
@@ -34,7 +33,9 @@ fun CreateRoomScreen(
     val loading by gameVm.loading.collectAsState()
     val error by gameVm.error.collectAsState()
 
-    var maxPlayers by remember { mutableIntStateOf(3) }
+    val nick = displayName.ifBlank { "Игрок" }
+    var roomName by remember(nick) { mutableStateOf("Комната $nick(a)") }
+    var maxPlayers by remember { mutableIntStateOf(2) }
     var theme by remember { mutableStateOf(DEFAULT_THEMES[1]) }
     var customTheme by remember { mutableStateOf("") }
     var useCustom by remember { mutableStateOf(false) }
@@ -59,22 +60,25 @@ fun CreateRoomScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            GlassCard(modifier = Modifier.fillMaxWidth(), radius = 16.dp, contentPadding = PaddingValues(14.dp)) {
-                Text("Имя комнаты", color = TextMuted, fontSize = 11.sp)
-                Text(
-                    displayName.ifBlank { "Игрок" },
-                    color = BlueBright,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Text("Игроки", color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+            Spacer(Modifier.height(8.dp))
+            Text("Название", color = TextMuted, fontSize = 12.sp)
             Spacer(Modifier.height(6.dp))
+            OutlinedTextField(
+                value = roomName,
+                onValueChange = { roomName = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = fieldColors(),
+                placeholder = { Text("Комната $nick(a)", color = TextMuted) }
+            )
+
+            Spacer(Modifier.height(18.dp))
+            Text("Игроки", color = TextMuted, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (2..5).forEach { n ->
                     FilterChip(
@@ -87,19 +91,18 @@ fun CreateRoomScreen(
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
-            Text("Тема", color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-            Spacer(Modifier.height(6.dp))
-            // Компактный FlowRow вместо вертикального списка
+            Spacer(Modifier.height(18.dp))
+            Text("Тема", color = TextMuted, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 DEFAULT_THEMES.forEach { t ->
                     FilterChip(
                         selected = !useCustom && theme == t,
                         onClick = { useCustom = false; theme = t },
-                        label = { Text(t, fontSize = 12.sp) },
+                        label = { Text(t, fontSize = 13.sp) },
                         colors = chipColors(!useCustom && theme == t),
                         border = chipBorder(!useCustom && theme == t)
                     )
@@ -107,30 +110,30 @@ fun CreateRoomScreen(
                 FilterChip(
                     selected = useCustom,
                     onClick = { useCustom = true },
-                    label = { Text("Своя", fontSize = 12.sp) },
+                    label = { Text("Своя", fontSize = 13.sp) },
                     colors = chipColors(useCustom),
                     border = chipBorder(useCustom)
                 )
             }
             if (useCustom) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = customTheme,
                     onValueChange = { customTheme = it },
-                    label = { Text("Своя тема") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = fieldColors()
+                    shape = RoundedCornerShape(14.dp),
+                    colors = fieldColors(),
+                    placeholder = { Text("Напиши тему", color = TextMuted) }
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = usePassword,
                     onCheckedChange = { usePassword = it },
-                    colors = CheckboxDefaults.colors(checkedColor = BluePrimary)
+                    colors = CheckboxDefaults.colors(checkedColor = BluePrimary, uncheckedColor = TextMuted)
                 )
                 Text("Пароль (необязательно)", color = TextPrimary, fontSize = 14.sp)
             }
@@ -138,26 +141,26 @@ fun CreateRoomScreen(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Пароль") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = fieldColors()
+                    shape = RoundedCornerShape(14.dp),
+                    colors = fieldColors(),
+                    placeholder = { Text("Пароль", color = TextMuted) }
                 )
             }
 
             if (error != null) {
-                Text(error!!, color = Error, modifier = Modifier.padding(top = 10.dp), fontSize = 13.sp)
+                Text(error!!, color = Error, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
             PrimaryGradientButton(
                 text = if (loading) "Создаём..." else "Создать комнату",
-                enabled = !loading,
+                enabled = !loading && roomName.isNotBlank(),
                 onClick = {
                     val finalTheme = if (useCustom && customTheme.isNotBlank()) customTheme else theme
                     gameVm.createRoom(
-                        name = displayName.ifBlank { "Игрок" },
+                        name = roomName.trim().ifBlank { "Комната $nick(a)" },
                         maxPlayers = maxPlayers,
                         theme = finalTheme,
                         password = if (usePassword) password else "",
@@ -165,7 +168,7 @@ fun CreateRoomScreen(
                     )
                 }
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -174,13 +177,13 @@ fun CreateRoomScreen(
 private fun chipColors(selected: Boolean) = FilterChipDefaults.filterChipColors(
     selectedContainerColor = BluePrimary,
     selectedLabelColor = Color.White,
-    containerColor = BgCardSolid,
+    containerColor = Color(0xFF121C2E),
     labelColor = TextSecondary
 )
 
 @Composable
 private fun chipBorder(selected: Boolean) = FilterChipDefaults.filterChipBorder(
-    borderColor = GlassStroke,
+    borderColor = Color(0x33FFFFFF),
     selectedBorderColor = BlueBright,
     enabled = true,
     selected = selected
@@ -189,10 +192,12 @@ private fun chipBorder(selected: Boolean) = FilterChipDefaults.filterChipBorder(
 @Composable
 private fun fieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = BlueBright,
-    unfocusedBorderColor = GlassStroke,
+    unfocusedBorderColor = Color(0x33FFFFFF),
     focusedLabelColor = BlueSoft,
     unfocusedLabelColor = TextMuted,
     cursorColor = BlueBright,
     focusedTextColor = TextPrimary,
-    unfocusedTextColor = TextPrimary
+    unfocusedTextColor = TextPrimary,
+    focusedContainerColor = Color.Transparent,
+    unfocusedContainerColor = Color.Transparent
 )
