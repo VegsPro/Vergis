@@ -17,6 +17,12 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Request
+import okhttp3.OkHttpClient
+import okhttp3.MultipartBody
+import okhttp3.MediaType.Companion.toMediaType
 
 class FirebaseRepository {
     private val auth = FirebaseAuth.getInstance()
