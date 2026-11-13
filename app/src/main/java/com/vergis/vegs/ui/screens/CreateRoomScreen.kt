@@ -1,6 +1,5 @@
 package com.vergis.vegs.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vergis.vegs.data.DEFAULT_THEMES
+import com.vergis.vegs.ui.components.GlassCard
+import com.vergis.vegs.ui.components.PrimaryGradientButton
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.AuthViewModel
 import com.vergis.vegs.viewmodel.GameViewModel
@@ -41,36 +42,40 @@ fun CreateRoomScreen(
     var usePassword by remember { mutableStateOf(false) }
 
     Scaffold(
-        containerColor = DarkBg,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Новая комната", color = TextPrimary) },
+                title = { Text("Новая комната", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
     ) { padding ->
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            Text("Имя комнаты = твоё имя", color = TextSecondary, fontSize = 13.sp)
-            Text(
-                displayName.ifBlank { "Игрок" },
-                color = Accent,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 20.dp)
-            )
+            GlassCard(modifier = Modifier.fillMaxWidth(), radius = 18.dp) {
+                Column {
+                    Text("Имя комнаты", color = TextMuted, fontSize = 12.sp)
+                    Text(
+                        displayName.ifBlank { "Игрок" },
+                        color = BlueBright,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
 
-            Text("Количество игроков", color = TextPrimary, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(18.dp))
+            Text("Игроки", color = TextPrimary, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (2..5).forEach { n ->
@@ -79,28 +84,41 @@ fun CreateRoomScreen(
                         onClick = { maxPlayers = n },
                         label = { Text("$n") },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Accent,
-                            selectedLabelColor = Color.Black
+                            selectedContainerColor = BluePrimary,
+                            selectedLabelColor = Color.White,
+                            containerColor = BgCardSolid,
+                            labelColor = TextSecondary
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = GlassStroke,
+                            selectedBorderColor = BlueBright,
+                            enabled = true,
+                            selected = maxPlayers == n
                         )
                     )
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            Text("Тема / тип", color = TextPrimary, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(18.dp))
+            Text("Тема", color = TextPrimary, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(8.dp))
             DEFAULT_THEMES.forEach { t ->
                 FilterChip(
                     selected = !useCustom && theme == t,
-                    onClick = {
-                        useCustom = false
-                        theme = t
-                    },
+                    onClick = { useCustom = false; theme = t },
                     label = { Text(t) },
                     modifier = Modifier.padding(end = 6.dp, bottom = 6.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Accent,
-                        selectedLabelColor = Color.Black
+                        selectedContainerColor = BluePrimary,
+                        selectedLabelColor = Color.White,
+                        containerColor = BgCardSolid,
+                        labelColor = TextSecondary
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        borderColor = GlassStroke,
+                        selectedBorderColor = BlueBright,
+                        enabled = true,
+                        selected = !useCustom && theme == t
                     )
                 )
             }
@@ -109,8 +127,16 @@ fun CreateRoomScreen(
                 onClick = { useCustom = true },
                 label = { Text("Своя тема") },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Accent,
-                    selectedLabelColor = Color.Black
+                    selectedContainerColor = BluePrimary,
+                    selectedLabelColor = Color.White,
+                    containerColor = BgCardSolid,
+                    labelColor = TextSecondary
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = GlassStroke,
+                    selectedBorderColor = BlueBright,
+                    enabled = true,
+                    selected = useCustom
                 )
             )
             if (useCustom) {
@@ -118,24 +144,20 @@ fun CreateRoomScreen(
                 OutlinedTextField(
                     value = customTheme,
                     onValueChange = { customTheme = it },
-                    label = { Text("Напиши свою тему") },
+                    label = { Text("Напиши тему") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = BorderLight,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    )
+                    shape = RoundedCornerShape(14.dp),
+                    colors = fieldColors()
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = usePassword,
                     onCheckedChange = { usePassword = it },
-                    colors = CheckboxDefaults.colors(checkedColor = Accent)
+                    colors = CheckboxDefaults.colors(checkedColor = BluePrimary)
                 )
                 Text("Пароль (необязательно)", color = TextPrimary)
             }
@@ -146,12 +168,8 @@ fun CreateRoomScreen(
                     label = { Text("Пароль") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = BorderLight,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    )
+                    shape = RoundedCornerShape(14.dp),
+                    colors = fieldColors()
                 )
             }
 
@@ -160,7 +178,9 @@ fun CreateRoomScreen(
             }
 
             Spacer(Modifier.height(28.dp))
-            Button(
+            PrimaryGradientButton(
+                text = if (loading) "Создаём..." else "Создать комнату",
+                enabled = !loading,
                 onClick = {
                     val finalTheme = if (useCustom && customTheme.isNotBlank()) customTheme else theme
                     gameVm.createRoom(
@@ -170,20 +190,20 @@ fun CreateRoomScreen(
                         password = if (usePassword) password else "",
                         onCreated = onCreated
                     )
-                },
-                enabled = !loading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                if (loading) {
-                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                } else {
-                    Text("Создать комнату", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
-            }
+            )
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
+
+@Composable
+private fun fieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = BlueBright,
+    unfocusedBorderColor = GlassStroke,
+    focusedLabelColor = BlueSoft,
+    unfocusedLabelColor = TextMuted,
+    cursorColor = BlueBright,
+    focusedTextColor = TextPrimary,
+    unfocusedTextColor = TextPrimary
+)

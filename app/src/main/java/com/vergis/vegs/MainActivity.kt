@@ -4,8 +4,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -21,7 +26,7 @@ import com.vergis.vegs.ui.screens.CreateRoomScreen
 import com.vergis.vegs.ui.screens.GameScreen
 import com.vergis.vegs.ui.screens.LobbyScreen
 import com.vergis.vegs.ui.screens.RoomsScreen
-import com.vergis.vegs.ui.theme.DarkBg
+import com.vergis.vegs.ui.theme.GradientBg
 import com.vergis.vegs.ui.theme.VergisTheme
 import com.vergis.vegs.viewmodel.AuthViewModel
 import com.vergis.vegs.viewmodel.GameViewModel
@@ -33,7 +38,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VergisTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = DarkBg) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(GradientBg)
+                ) {
                     VergisNav()
                 }
             }
@@ -47,9 +56,18 @@ fun VergisNav() {
     val authVm: AuthViewModel = viewModel()
     val isLoggedIn by authVm.isLoggedIn.collectAsState()
 
+    val enter = fadeIn(tween(320)) + slideIntoContainerCompat(AnimatedContentTransitionScope.SlideDirection.Start)
+    val exit = fadeOut(tween(220)) + slideOutOfContainerCompat(AnimatedContentTransitionScope.SlideDirection.Start)
+    val popEnter = fadeIn(tween(320)) + slideIntoContainerCompat(AnimatedContentTransitionScope.SlideDirection.End)
+    val popExit = fadeOut(tween(220)) + slideOutOfContainerCompat(AnimatedContentTransitionScope.SlideDirection.End)
+
     NavHost(
         navController = navController,
-        startDestination = if (isLoggedIn) "rooms" else "auth"
+        startDestination = if (isLoggedIn) "rooms" else "auth",
+        enterTransition = { fadeIn(tween(300)) },
+        exitTransition = { fadeOut(tween(200)) },
+        popEnterTransition = { fadeIn(tween(300)) },
+        popExitTransition = { fadeOut(tween(200)) }
     ) {
         composable("auth") {
             AuthScreen(
@@ -67,9 +85,7 @@ fun VergisNav() {
                 viewModel = roomsVm,
                 authViewModel = authVm,
                 onCreateRoom = { navController.navigate("create") },
-                onJoinRoom = { roomId ->
-                    navController.navigate("lobby/$roomId")
-                },
+                onJoinRoom = { roomId -> navController.navigate("lobby/$roomId") },
                 onLogout = {
                     authVm.logout()
                     navController.navigate("auth") {
@@ -127,3 +143,10 @@ fun VergisNav() {
         }
     }
 }
+
+// helpers kept simple — actual slide uses AnimatedContentTransitionScope in newer nav
+private fun slideIntoContainerCompat(direction: AnimatedContentTransitionScope.SlideDirection) =
+    fadeIn(tween(1))
+
+private fun slideOutOfContainerCompat(direction: AnimatedContentTransitionScope.SlideDirection) =
+    fadeOut(tween(1))

@@ -1,6 +1,8 @@
 package com.vergis.vegs.ui.screens
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,9 +17,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vergis.vegs.ui.components.GlassCard
+import com.vergis.vegs.ui.components.PrimaryGradientButton
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.GameViewModel
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,17 +39,13 @@ fun GameScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var lastAnswerCount by remember { mutableIntStateOf(-1) }
 
-    LaunchedEffect(roomId) {
-        viewModel.observe(roomId)
-    }
-
+    LaunchedEffect(roomId) { viewModel.observe(roomId) }
     LaunchedEffect(room?.currentRound) {
         answerText = ""
         hasSubmitted = false
         lastAnswerCount = -1
     }
 
-    // In-app уведомление: N из M ответили — при каждом новом ответе
     val answerCount = room?.answers?.size ?: 0
     val playerCount = room?.players?.size ?: 0
     LaunchedEffect(answerCount, playerCount, room?.currentRound) {
@@ -62,10 +61,7 @@ fun GameScreen(
             } else {
                 "Ответили $answerCount из $playerCount"
             }
-            snackbarHostState.showSnackbar(
-                message = msg,
-                duration = SnackbarDuration.Short
-            )
+            snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Short)
         } else {
             lastAnswerCount = answerCount
         }
@@ -77,14 +73,14 @@ fun GameScreen(
     val readyCount = r?.readyForNext?.size ?: 0
 
     Scaffold(
-        containerColor = DarkBg,
+        containerColor = Color.Transparent,
         snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState) { data ->
+            SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
                     snackbarData = data,
-                    containerColor = SurfaceGlass,
+                    containerColor = BgCardSolid,
                     contentColor = TextPrimary,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(14.dp)
                 )
             }
         },
@@ -93,7 +89,7 @@ fun GameScreen(
                 title = {
                     Column {
                         Text("Раунд ${r?.currentRound ?: 0}", color = TextPrimary, fontWeight = FontWeight.Bold)
-                        Text(r?.theme ?: "", color = TextSecondary, fontSize = 12.sp)
+                        Text(r?.theme ?: "", color = BlueSoft, fontSize = 12.sp)
                     }
                 },
                 navigationIcon = {
@@ -104,47 +100,43 @@ fun GameScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         }
     ) { padding ->
         if (r == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Accent)
+                CircularProgressIndicator(color = BlueBright)
             }
             return@Scaffold
         }
 
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            // Живой счётчик ответов
-            if (!allAnswered && r.status == "playing") {
+            AnimatedVisibility(visible = !allAnswered && r.status == "playing", enter = fadeIn(), exit = fadeOut()) {
                 Text(
-                    text = "Ответили ${r.answers.size} из ${r.players.size}",
-                    color = Accent,
+                    "Ответили ${r.answers.size} из ${r.players.size}",
+                    color = BlueBright,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 10.dp)
                 )
             }
 
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SurfaceGlass),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(20.dp)) {
-                    Text("Вопрос", color = TextSecondary, fontSize = 12.sp)
-                    Spacer(Modifier.height(6.dp))
+            GlassCard(modifier = Modifier.fillMaxWidth(), radius = 20.dp) {
+                Column {
+                    Text("Вопрос", color = TextMuted, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        r.currentQuestion.ifBlank { "Генерируем вопрос..." },
+                        r.currentQuestion.ifBlank { "Генерируем вопрос…" },
                         color = TextPrimary,
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 26.sp
                     )
                 }
             }
@@ -154,20 +146,30 @@ fun GameScreen(
             if (!allAnswered) {
                 val alreadyAnswered = r.answers.containsKey(myUid)
                 if (alreadyAnswered || hasSubmitted) {
-                    Text(
-                        "Ответ отправлен. Ждём остальных (${r.answers.size}/${r.players.size})...",
-                        color = TextSecondary,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
-                    LinearProgressIndicator(
-                        progress = { r.answers.size.toFloat() / r.players.size.coerceAtLeast(1) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp)
-                            .height(6.dp),
-                        color = Accent,
-                        trackColor = BorderLight
-                    )
+                    GlassCard(modifier = Modifier.fillMaxWidth(), radius = 16.dp) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "Ответ отправлен",
+                                color = Success,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "Ждём остальных (${r.answers.size}/${r.players.size})",
+                                color = TextSecondary,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                            LinearProgressIndicator(
+                                progress = { r.answers.size.toFloat() / r.players.size.coerceAtLeast(1) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 14.dp)
+                                    .height(6.dp),
+                                color = BluePrimary,
+                                trackColor = GlassStroke
+                            )
+                        }
+                    }
                 } else {
                     OutlinedTextField(
                         value = answerText,
@@ -175,106 +177,76 @@ fun GameScreen(
                         label = { Text("Твой ответ") },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 100.dp),
-                        maxLines = 5,
+                            .heightIn(min = 120.dp),
+                        maxLines = 6,
+                        shape = RoundedCornerShape(16.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Accent,
-                            unfocusedBorderColor = BorderLight,
+                            focusedBorderColor = BlueBright,
+                            unfocusedBorderColor = GlassStroke,
+                            focusedLabelColor = BlueSoft,
+                            unfocusedLabelColor = TextMuted,
+                            cursorColor = BlueBright,
                             focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary
+                            unfocusedTextColor = TextPrimary,
+                            focusedContainerColor = Color(0x220B1730),
+                            unfocusedContainerColor = Color(0x180B1730)
                         )
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            if (answerText.isNotBlank()) {
-                                viewModel.submitAnswer(roomId, answerText)
-                                hasSubmitted = true
-                            }
-                        },
+                    Spacer(Modifier.height(14.dp))
+                    PrimaryGradientButton(
+                        text = "Отправить ответ",
                         enabled = answerText.isNotBlank(),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Отправить ответ", color = Color.Black, fontWeight = FontWeight.SemiBold)
-                    }
+                        onClick = {
+                            viewModel.submitAnswer(roomId, answerText)
+                            hasSubmitted = true
+                        }
+                    )
                 }
             } else {
-                Text(
-                    "Ответы всех игроков",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp
-                )
+                Text("Ответы", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                 Spacer(Modifier.height(10.dp))
-
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(r.players.values.toList()) { player ->
                         val ans = r.answers[player.uid] ?: "—"
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = SurfaceGlass),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(Modifier.padding(14.dp)) {
+                        GlassCard(modifier = Modifier.fillMaxWidth(), radius = 14.dp) {
+                            Column {
                                 Text(
-                                    player.name + if (player.uid == myUid) " (ты)" else "",
-                                    color = Accent,
+                                    player.name + if (player.uid == myUid) " · ты" else "",
+                                    color = BlueSoft,
                                     fontWeight = FontWeight.Medium,
-                                    fontSize = 13.sp
+                                    fontSize = 12.sp
                                 )
-                                Spacer(Modifier.height(4.dp))
-                                Text(ans, color = TextPrimary, fontSize = 15.sp)
+                                Spacer(Modifier.height(6.dp))
+                                Text(ans, color = TextPrimary, fontSize = 15.sp, lineHeight = 22.sp)
                             }
                         }
                     }
                 }
-
                 Spacer(Modifier.height(12.dp))
-
                 if (iAmReady) {
                     Text(
-                        "Готовы к следующему: $readyCount / ${r.players.size}",
+                        "Готовы: $readyCount / ${r.players.size}",
                         color = Success,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
                     if (loading) {
                         CircularProgressIndicator(
-                            color = Accent,
+                            color = BlueBright,
                             modifier = Modifier
                                 .align(Alignment.CenterHorizontally)
-                                .padding(top = 8.dp)
+                                .padding(top = 10.dp)
                                 .size(28.dp),
                             strokeWidth = 2.dp
                         )
-                        Text(
-                            "Генерируем следующий вопрос...",
-                            color = TextSecondary,
-                            fontSize = 12.sp,
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        )
                     }
                 } else {
-                    Button(
-                        onClick = { viewModel.setReady(roomId) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text(
-                            "Следующий раунд",
-                            color = Color.Black,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    PrimaryGradientButton(
+                        text = "Следующий раунд",
+                        onClick = { viewModel.setReady(roomId) }
+                    )
                 }
             }
         }

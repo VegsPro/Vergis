@@ -1,10 +1,13 @@
 package com.vergis.vegs.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -15,11 +18,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vergis.vegs.data.RoomInfo
+import com.vergis.vegs.ui.components.GlassCard
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.AuthViewModel
 import com.vergis.vegs.viewmodel.RoomsViewModel
@@ -42,94 +48,95 @@ fun RoomsScreen(
     var passwordInput by remember { mutableStateOf("") }
 
     Scaffold(
-        containerColor = DarkBg,
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Vergis", color = Accent, fontWeight = FontWeight.Bold)
+                        Text("Vergis", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                         Text(
                             "Привет, ${displayName.ifBlank { "Игрок" }}",
                             color = TextSecondary,
-                            fontSize = 12.sp
+                            fontSize = 13.sp
                         )
                     }
                 },
                 actions = {
                     IconButton(onClick = onLogout) {
-                        Icon(Icons.Default.Logout, contentDescription = "Выйти", tint = TextSecondary)
+                        Icon(Icons.Default.Logout, null, tint = TextSecondary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onCreateRoom,
-                containerColor = Accent,
-                contentColor = Color.Black
+                containerColor = BluePrimary,
+                contentColor = Color.White,
+                shape = CircleShape
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Создать комнату")
+                Icon(Icons.Default.Add, "Создать")
             }
         }
     ) { padding ->
         Box(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (loading) {
-                CircularProgressIndicator(
-                    color = Accent,
+            when {
+                loading -> CircularProgressIndicator(
+                    color = BlueBright,
                     modifier = Modifier.align(Alignment.Center)
                 )
-            } else if (rooms.isEmpty()) {
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
+                rooms.isEmpty() -> Column(
+                    Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Нет активных комнат", color = TextSecondary)
-                    Text("Создай первую!", color = TextSecondary, fontSize = 13.sp)
+                    Text("Нет активных комнат", color = TextSecondary, fontSize = 16.sp)
+                    Text("Создай первую →", color = TextMuted, fontSize = 13.sp)
                 }
-            } else {
-                LazyColumn(
+                else -> LazyColumn(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(rooms, key = { it.id }) { room ->
-                        RoomCard(
-                            room = room,
-                            onClick = {
-                                if (room.password.isNotEmpty()) {
-                                    passwordDialogRoom = room
-                                    passwordInput = ""
-                                } else {
-                                    viewModel.joinRoom(room.id, "", displayName) {
-                                        onJoinRoom(room.id)
+                    itemsIndexed(rooms, key = { _, r -> r.id }) { index, room ->
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn() + slideInVertically { it / 4 }
+                        ) {
+                            RoomCard(
+                                room = room,
+                                onClick = {
+                                    if (room.password.isNotEmpty()) {
+                                        passwordDialogRoom = room
+                                        passwordInput = ""
+                                    } else {
+                                        viewModel.joinRoom(room.id, "", displayName) {
+                                            onJoinRoom(room.id)
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
 
             if (joinError != null) {
-                LaunchedEffect(joinError) {
-                    // show briefly
-                }
                 Snackbar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(16.dp),
+                    containerColor = BgCardSolid,
+                    contentColor = TextPrimary,
                     action = {
                         TextButton(onClick = { viewModel.clearJoinError() }) {
-                            Text("OK", color = Accent)
+                            Text("OK", color = BlueBright)
                         }
                     }
-                ) {
-                    Text(joinError!!)
-                }
+                ) { Text(joinError!!) }
             }
         }
     }
@@ -144,9 +151,10 @@ fun RoomsScreen(
                     onValueChange = { passwordInput = it },
                     label = { Text("Пароль") },
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = BorderLight,
+                        focusedBorderColor = BlueBright,
+                        unfocusedBorderColor = GlassStroke,
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary
                     )
@@ -159,67 +167,70 @@ fun RoomsScreen(
                         passwordDialogRoom = null
                         onJoinRoom(r.id)
                     }
-                }) {
-                    Text("Войти", color = Accent)
-                }
+                }) { Text("Войти", color = BlueBright) }
             },
             dismissButton = {
                 TextButton(onClick = { passwordDialogRoom = null }) {
                     Text("Отмена", color = TextSecondary)
                 }
             },
-            containerColor = SurfaceGlass
+            containerColor = BgCardSolid
         )
     }
 }
 
 @Composable
 private fun RoomCard(room: RoomInfo, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = SurfaceGlass),
-        shape = RoundedCornerShape(16.dp)
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick,
+        radius = 18.dp
     ) {
         Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF1E3A8A), Color(0xFF3B82F6))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    room.name.take(1).uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = room.name,
+                        room.name,
                         color = TextPrimary,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 17.sp
+                        fontSize = 16.sp
                     )
                     if (room.password.isNotEmpty()) {
                         Spacer(Modifier.width(6.dp))
-                        Icon(
-                            Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = Warning,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Default.Lock, null, tint = Warning, modifier = Modifier.size(14.dp))
                     }
                 }
+                Text(room.theme, color = BlueSoft, fontSize = 13.sp)
                 Text(
-                    text = room.theme,
-                    color = Accent,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-                Text(
-                    text = if (room.status == "playing") "Идёт игра • раунд ${room.currentRound}" else "Ожидание",
-                    color = TextSecondary,
+                    if (room.status == "playing") "Игра · раунд ${room.currentRound}" else "Ожидание",
+                    color = TextMuted,
                     fontSize = 12.sp
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.People, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.People, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(
                     "${room.players.size}/${room.maxPlayers}",
