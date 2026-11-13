@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "102602262042",
+    "project_id": "vix-hub-3caca",
+    "storage_bucket": "vix-hub-3caca.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:102602262042:android:abcdef1234567890",
+        "android_client_info": {
+          "package_name": "com.vergis.vegs"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDummyKeyReplaceWithRealFromConsole"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
