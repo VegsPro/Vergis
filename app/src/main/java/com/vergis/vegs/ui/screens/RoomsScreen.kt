@@ -37,7 +37,8 @@ fun RoomsScreen(
     authViewModel: AuthViewModel,
     onCreateRoom: () -> Unit,
     onJoinRoom: (String) -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onProfile: () -> Unit
 ) {
     val rooms by viewModel.rooms.collectAsState()
     val loading by viewModel.loading.collectAsState()
@@ -69,6 +70,9 @@ fun RoomsScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = onProfile) {
+                        Text("Профиль", color = BlueBright, fontSize = 13.sp)
+                    }
                     IconButton(onClick = onLogout) {
                         Icon(Icons.Default.Logout, null, tint = TextSecondary)
                     }

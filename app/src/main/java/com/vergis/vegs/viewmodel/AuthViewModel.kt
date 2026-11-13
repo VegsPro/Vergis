@@ -3,6 +3,7 @@ package com.vergis.vegs.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vergis.vegs.data.FirebaseRepository
+import com.vergis.vegs.data.UserProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,8 +21,30 @@ class AuthViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    private val _displayName = MutableStateFlow(repo.currentUser?.displayName.orEmpty())
+    private val _displayName = MutableStateFlow("")
     val displayName: StateFlow<String> = _displayName.asStateFlow()
+
+    private val _avatarUrl = MutableStateFlow("")
+    val avatarUrl: StateFlow<String> = _avatarUrl.asStateFlow()
+
+    private val _profile = MutableStateFlow<UserProfile?>(null)
+    val profile: StateFlow<UserProfile?> = _profile.asStateFlow()
+
+    init {
+        refreshProfile()
+    }
+
+    fun refreshProfile() {
+        val uid = repo.currentUser?.uid ?: return
+        viewModelScope.launch {
+            val p = repo.getUserProfile(uid)
+            _profile.value = p
+            _displayName.value = p?.displayName?.takeIf { it.isNotBlank() }
+                ?: repo.currentUser?.displayName.orEmpty()
+            _avatarUrl.value = p?.avatarUrl.orEmpty()
+            _isLoggedIn.value = true
+        }
+    }
 
     fun login(email: String, password: String) {
         viewModelScope.launch {
@@ -31,7 +54,7 @@ class AuthViewModel : ViewModel() {
             _loading.value = false
             result.onSuccess {
                 _isLoggedIn.value = true
-                _displayName.value = repo.currentUser?.displayName.orEmpty()
+                refreshProfile()
             }.onFailure {
                 _error.value = it.message ?: "Ошибка входа"
             }
@@ -52,8 +75,41 @@ class AuthViewModel : ViewModel() {
             result.onSuccess {
                 _isLoggedIn.value = true
                 _displayName.value = name.trim()
+                refreshProfile()
             }.onFailure {
                 _error.value = it.message ?: "Ошибка регистрации"
+            }
+        }
+    }
+
+    fun updateName(name: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            _loading.value = true
+            _error.value = null
+            val result = repo.updateDisplayName(name.trim())
+            _loading.value = false
+            result.onSuccess {
+                _displayName.value = name.trim()
+                refreshProfile()
+                onDone()
+            }.onFailure {
+                _error.value = it.message
+            }
+        }
+    }
+
+    fun uploadAvatar(bytes: ByteArray, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            _loading.value = true
+            _error.value = null
+            val result = repo.uploadAvatar(bytes)
+            _loading.value = false
+            result.onSuccess { url ->
+                _avatarUrl.value = url
+                refreshProfile()
+                onDone()
+            }.onFailure {
+                _error.value = it.message ?: "Не удалось загрузить аватар"
             }
         }
     }
@@ -62,6 +118,8 @@ class AuthViewModel : ViewModel() {
         repo.logout()
         _isLoggedIn.value = false
         _displayName.value = ""
+        _avatarUrl.value = ""
+        _profile.value = null
     }
 
     fun clearError() {

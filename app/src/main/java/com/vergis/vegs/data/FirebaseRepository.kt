@@ -6,6 +6,11 @@ import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.storage.FirebaseStorage
+import android.net.Uri
+import java.io.ByteArrayOutputStream
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -14,6 +19,7 @@ import kotlinx.coroutines.tasks.await
 class FirebaseRepository {
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseDatabase.getInstance().reference.child("vergis")
+    private val storage = FirebaseStorage.getInstance().reference.child("vergis")
 
     val currentUser get() = auth.currentUser
 
@@ -22,6 +28,15 @@ class FirebaseRepository {
             val result = auth.createUserWithEmailAndPassword(email, password).await()
             val profile = UserProfileChangeRequest.Builder().setDisplayName(displayName).build()
             result.user?.updateProfile(profile)?.await()
+            val uid = result.user?.uid ?: return Result.failure(Exception("Нет uid"))
+            db.child("users").child(uid).setValue(
+                mapOf(
+                    "uid" to uid,
+                    "email" to email,
+                    "displayName" to displayName,
+                    "avatarUrl" to ""
+                )
+            ).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -102,11 +117,17 @@ class FirebaseRepository {
     ): Result<String> {
         return try {
             val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
+            val profile = getUserProfile(user.uid)
+            val finalName = profile?.displayName?.takeIf { it.isNotBlank() }
+                ?: name.takeIf { it.isNotBlank() }
+                ?: user.displayName
+                ?: "Игрок"
+            val avatar = profile?.avatarUrl ?: ""
             val ref = db.child("rooms").push()
             val id = ref.key ?: return Result.failure(Exception("Ошибка id"))
             val now = System.currentTimeMillis()
             val room = mapOf(
-                "name" to name,
+                "name" to finalName,
                 "creatorId" to user.uid,
                 "maxPlayers" to maxPlayers,
                 "theme" to theme,
@@ -119,7 +140,8 @@ class FirebaseRepository {
                 "players" to mapOf(
                     user.uid to mapOf(
                         "uid" to user.uid,
-                        "name" to name,
+                        "name" to finalName,
+                        "avatarUrl" to avatar,
                         "joinedAt" to now
                     )
                 ),
@@ -150,9 +172,11 @@ class FirebaseRepository {
             if (room.players.containsKey(user.uid)) {
                 return Result.success(Unit)
             }
+            val profile = getUserProfile(user.uid)
             val player = mapOf(
                 "uid" to user.uid,
-                "name" to playerName,
+                "name" to (profile?.displayName?.takeIf { it.isNotBlank() } ?: playerName),
+                "avatarUrl" to (profile?.avatarUrl ?: ""),
                 "joinedAt" to System.currentTimeMillis()
             )
             db.child("rooms").child(roomId).child("players").child(user.uid).setValue(player).await()
@@ -230,6 +254,72 @@ class FirebaseRepository {
         db.child("rooms").child(roomId).updateChildren(updates).await()
     }
 
+
+    suspend fun getUserProfile(uid: String): UserProfile? {
+        return try {
+            val snap = db.child("users").child(uid).get().await()
+            if (!snap.exists()) {
+                val u = currentUser ?: return null
+                return UserProfile(
+                    uid = u.uid,
+                    email = u.email.orEmpty(),
+                    displayName = u.displayName.orEmpty(),
+                    avatarUrl = u.photoUrl?.toString().orEmpty()
+                )
+            }
+            UserProfile(
+                uid = uid,
+                email = snap.child("email").getValue(String::class.java) ?: "",
+                displayName = snap.child("displayName").getValue(String::class.java) ?: "",
+                avatarUrl = snap.child("avatarUrl").getValue(String::class.java) ?: ""
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun updateDisplayName(name: String): Result<Unit> {
+        return try {
+            val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
+            val profile = UserProfileChangeRequest.Builder().setDisplayName(name).build()
+            user.updateProfile(profile).await()
+            db.child("users").child(user.uid).child("displayName").setValue(name).await()
+            // обновить имя во всех waiting комнатах где я есть
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun uploadAvatar(bytes: ByteArray): Result<String> {
+        return try {
+            val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
+            val ref = storage.child("avatars").child("${user.uid}.jpg")
+            ref.putBytes(bytes).await()
+            val url = ref.downloadUrl.await().toString()
+            db.child("users").child(user.uid).child("avatarUrl").setValue(url).await()
+            val profile = UserProfileChangeRequest.Builder().setPhotoUri(Uri.parse(url)).build()
+            user.updateProfile(profile).await()
+            Result.success(url)
+        } catch (e: Exception) {
+            // fallback: base64 в RTDB (без Storage)
+            try {
+                val user = currentUser ?: return Result.failure(e)
+                val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                val dataUrl = "data:image/jpeg;base64,$b64"
+                // если слишком большой — не пишем
+                if (b64.length < 400_000) {
+                    db.child("users").child(user.uid).child("avatarUrl").setValue(dataUrl).await()
+                    Result.success(dataUrl)
+                } else {
+                    Result.failure(Exception("Файл слишком большой, включи Firebase Storage"))
+                }
+            } catch (e2: Exception) {
+                Result.failure(e2)
+            }
+        }
+    }
+
     private fun parseRoom(snapshot: DataSnapshot): RoomInfo? {
         if (!snapshot.exists()) return null
         val id = snapshot.key ?: return null
@@ -248,8 +338,9 @@ class FirebaseRepository {
         for (p in snapshot.child("players").children) {
             val uid = p.key ?: continue
             val pname = p.child("name").getValue(String::class.java) ?: "Игрок"
+            val avatar = p.child("avatarUrl").getValue(String::class.java) ?: ""
             val joined = p.child("joinedAt").getValue(Long::class.java) ?: 0L
-            players[uid] = PlayerInfo(uid, pname, joined)
+            players[uid] = PlayerInfo(uid, pname, avatar, joined)
         }
 
         val answers = mutableMapOf<String, String>()

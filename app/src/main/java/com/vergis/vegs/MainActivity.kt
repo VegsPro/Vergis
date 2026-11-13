@@ -26,6 +26,7 @@ import com.vergis.vegs.ui.screens.CreateRoomScreen
 import com.vergis.vegs.ui.screens.GameScreen
 import com.vergis.vegs.ui.screens.LobbyScreen
 import com.vergis.vegs.ui.screens.RoomsScreen
+import com.vergis.vegs.ui.screens.ProfileScreen
 import com.vergis.vegs.ui.theme.GradientBg
 import com.vergis.vegs.ui.theme.VergisTheme
 import com.vergis.vegs.viewmodel.AuthViewModel
@@ -91,7 +92,14 @@ fun VergisNav() {
                     navController.navigate("auth") {
                         popUpTo(0) { inclusive = true }
                     }
-                }
+                },
+                onProfile = { navController.navigate("profile") }
+            )
+        }
+        composable("profile") {
+            ProfileScreen(
+                viewModel = authVm,
+                onBack = { navController.popBackStack() }
             )
         }
         composable("create") {

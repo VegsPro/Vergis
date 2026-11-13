@@ -36,6 +36,8 @@ import com.vergis.vegs.data.PlayerInfo
 import com.vergis.vegs.ui.components.PrimaryGradientButton
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.GameViewModel
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,7 +168,7 @@ fun GameScreen(
 
             // Player avatars
             LazyRow(
-                horizontalArrangement = Arrangement.spacedBy((-8).dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(bottom = 8.dp)
             ) {
                 items(r.players.values.toList()) { player ->
@@ -386,11 +388,20 @@ private fun PlayerAvatar(player: PlayerInfo, answered: Boolean) {
             ),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            player.name.take(1).uppercase(),
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp
-        )
+        if (player.avatarUrl.isNotBlank()) {
+            AsyncImage(
+                model = player.avatarUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Text(
+                player.name.take(1).uppercase().ifBlank { "?" },
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+        }
     }
 }

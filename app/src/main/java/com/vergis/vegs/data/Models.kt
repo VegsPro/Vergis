@@ -7,7 +7,7 @@ data class RoomInfo(
     val maxPlayers: Int = 2,
     val theme: String = "Для друзей",
     val password: String = "",
-    val status: String = "waiting", // waiting | playing | finished
+    val status: String = "waiting",
     val currentRound: Int = 0,
     val currentQuestion: String = "",
     val createdAt: Long = System.currentTimeMillis(),
@@ -21,13 +21,15 @@ data class RoomInfo(
 data class PlayerInfo(
     val uid: String = "",
     val name: String = "",
+    val avatarUrl: String = "",
     val joinedAt: Long = System.currentTimeMillis()
 )
 
 data class UserProfile(
     val uid: String = "",
     val email: String = "",
-    val displayName: String = ""
+    val displayName: String = "",
+    val avatarUrl: String = ""
 )
 
 val DEFAULT_THEMES = listOf(

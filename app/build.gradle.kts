@@ -13,8 +13,8 @@ android {
         applicationId = "com.vergis.vegs"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.1.1"
+        versionCode = 9
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -88,6 +88,9 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.activity:activity-ktx:1.9.3")
 
     // Network for Gemini
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
