@@ -12,19 +12,13 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * Генерация вопросов через Gemini.
+ * Генерация вопросов через Gemini (тот же способ, что и в рабочем Python-скрипте).
  *
- * Чтобы работало из РФ:
- * 1. Создай ключ AIza... на https://aistudio.google.com/apikey
- * 2. Задеплой proxy/worker.js в Cloudflare Workers (2 минуты)
- * 3. Положи ключ в Secret Worker: GEMINI_API_KEY
- * 4. В GitHub Secrets приложения поставь:
- *      GEMINI_BASE_URL = https://твой-worker.xxx.workers.dev
- *      (GEMINI_API_KEY можно оставить пустым — ключ только на Worker)
- * 5. Пересобери APK
- *
- * Если BASE_URL пустой — пробует прямой вызов (часто блокируется из РФ).
- * Если всё упало — берёт качественный fallback по теме и раунду.
+ * - Модель: gemini-2.5-flash
+ * - Авторизация: заголовок x-goog-api-key (как в google-genai SDK)
+ * - С VPN на телефоне работает так же, как терминальный чат
+ * - Без VPN / при ошибке — качественный fallback по теме и раунду
+ * - Опционально: GEMINI_BASE_URL (Cloudflare Worker) для обхода геоблока без VPN
  */
 class GeminiService {
     private val client = OkHttpClient.Builder()
@@ -35,14 +29,19 @@ class GeminiService {
     private val apiKey = BuildConfig.GEMINI_API_KEY
     private val baseUrl = BuildConfig.GEMINI_BASE_URL.trim().removeSuffix("/")
 
+    // Модели в порядке предпочтения (как в рабочем скрипте)
     private val models = listOf(
+        "gemini-2.5-flash",
         "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest"
+        "gemini-1.5-flash"
     )
 
     suspend fun generateQuestion(theme: String, round: Int, playerCount: Int): String =
         withContext(Dispatchers.IO) {
+            if (apiKey.isBlank() && baseUrl.isBlank()) {
+                return@withContext fallbackQuestion(theme, round)
+            }
+
             val personalLevel = when {
                 round <= 1 -> "лёгкие, весёлые, неличные вопросы для знакомства"
                 round <= 3 -> "чуть более личные, но всё ещё комфортные вопросы"
@@ -65,34 +64,48 @@ class GeminiService {
                 Верни ТОЛЬКО текст вопроса, без кавычек и пояснений.
             """.trimIndent()
 
-            // 1) Через Cloudflare Worker (рекомендуется для РФ)
+            // 1) Через Cloudflare Worker (если задан)
             if (baseUrl.isNotBlank()) {
                 for (model in models) {
-                    callViaBase(baseUrl, model, prompt)?.let { return@withContext it }
+                    call(baseUrl, model, prompt, injectKey = false)?.let { return@withContext it }
                 }
             }
 
-            // 2) Прямой вызов (работает только если IP не из РФ / ключ валидный)
+            // 2) Прямой вызов (как в Python google-genai: x-goog-api-key)
             if (apiKey.isNotBlank()) {
                 for (model in models) {
-                    callDirect(model, prompt)?.let { return@withContext it }
+                    call("https://generativelanguage.googleapis.com", model, prompt, injectKey = true)
+                        ?.let { return@withContext it }
                 }
             }
 
-            // 3) Fallback — игра всегда продолжается
             fallbackQuestion(theme, round)
         }
 
-    private fun callViaBase(base: String, model: String, prompt: String): String? {
+    private fun call(base: String, model: String, prompt: String, injectKey: Boolean): String? {
         return try {
             val url = "$base/v1beta/models/$model:generateContent"
-            val bodyJson = buildBody(prompt)
-            val request = Request.Builder()
+            val bodyJson = JSONObject().apply {
+                put("contents", JSONArray().put(JSONObject().apply {
+                    put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+                }))
+                put("generationConfig", JSONObject().apply {
+                    put("temperature", 0.95)
+                    put("maxOutputTokens", 120)
+                })
+            }.toString()
+
+            val builder = Request.Builder()
                 .url(url)
                 .post(bodyJson.toRequestBody("application/json".toMediaType()))
-                .build()
+                .header("Content-Type", "application/json")
 
-            client.newCall(request).execute().use { response ->
+            // Тот же способ, что использует google-genai Python SDK
+            if (injectKey && apiKey.isNotBlank()) {
+                builder.header("x-goog-api-key", apiKey)
+            }
+
+            client.newCall(builder.build()).execute().use { response ->
                 val body = response.body?.string() ?: return null
                 if (!response.isSuccessful) return null
                 extractText(body)
@@ -100,38 +113,6 @@ class GeminiService {
         } catch (_: Exception) {
             null
         }
-    }
-
-    private fun callDirect(model: String, prompt: String): String? {
-        return try {
-            val url =
-                "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
-            val bodyJson = buildBody(prompt)
-            val request = Request.Builder()
-                .url(url)
-                .post(bodyJson.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: return null
-                if (!response.isSuccessful) return null
-                extractText(body)
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun buildBody(prompt: String): String {
-        return JSONObject().apply {
-            put("contents", JSONArray().put(JSONObject().apply {
-                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-            }))
-            put("generationConfig", JSONObject().apply {
-                put("temperature", 0.95)
-                put("maxOutputTokens", 120)
-            })
-        }.toString()
     }
 
     private fun extractText(body: String): String? {
