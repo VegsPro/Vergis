@@ -7,7 +7,7 @@ on:
 
 env:
   APP_NAME: Vergis
-  VERSION_NAME: 1.0.1
+  VERSION_NAME: 1.0.2
 
 jobs:
   build:
@@ -47,6 +47,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_BASE_URL: ${{ secrets.GEMINI_BASE_URL }}
           KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 

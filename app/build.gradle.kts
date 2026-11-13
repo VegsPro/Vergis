@@ -13,12 +13,13 @@ android {
         applicationId = "com.vergis.vegs"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "GEMINI_API_KEY", "\"${System.getenv("GEMINI_API_KEY") ?: ""}\"")
+        buildConfigField("String", "GEMINI_BASE_URL", "\"${System.getenv("GEMINI_BASE_URL") ?: ""}\"")
     }
 
     signingConfigs {

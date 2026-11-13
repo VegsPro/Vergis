@@ -12,27 +12,28 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * Генерация вопросов.
+ * Генерация вопросов через Gemini.
  *
- * Gemini из РФ часто блокируется даже с VPN.
- * Решения:
- * 1. Получи нормальный ключ AIza... на https://aistudio.google.com/apikey
- * 2. Положи его в GitHub Secret GEMINI_API_KEY и пересобери
- * 3. Если всё равно блок — используй proxy (см. PROXY_URL ниже) или
- *    игра продолжит работать на встроенных вопросах (fallback).
+ * Чтобы работало из РФ:
+ * 1. Создай ключ AIza... на https://aistudio.google.com/apikey
+ * 2. Задеплой proxy/worker.js в Cloudflare Workers (2 минуты)
+ * 3. Положи ключ в Secret Worker: GEMINI_API_KEY
+ * 4. В GitHub Secrets приложения поставь:
+ *      GEMINI_BASE_URL = https://твой-worker.xxx.workers.dev
+ *      (GEMINI_API_KEY можно оставить пустым — ключ только на Worker)
+ * 5. Пересобери APK
+ *
+ * Если BASE_URL пустой — пробует прямой вызов (часто блокируется из РФ).
+ * Если всё упало — берёт качественный fallback по теме и раунду.
  */
 class GeminiService {
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(40, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
         .build()
 
     private val apiKey = BuildConfig.GEMINI_API_KEY
-
-    // Если нужно обойти геоблок: подними Cloudflare Worker / Vercel / свой сервер
-    // который принимает {prompt} и дергает Gemini, и пропиши URL сюда или в BuildConfig.
-    // Пример Worker: https://github.com/ (простой proxy на 20 строк)
-    private val proxyUrl: String? = null // например "https://your-worker.workers.dev/gemini"
+    private val baseUrl = BuildConfig.GEMINI_BASE_URL.trim().removeSuffix("/")
 
     private val models = listOf(
         "gemini-2.0-flash",
@@ -42,10 +43,6 @@ class GeminiService {
 
     suspend fun generateQuestion(theme: String, round: Int, playerCount: Int): String =
         withContext(Dispatchers.IO) {
-            if (apiKey.isBlank()) {
-                return@withContext fallbackQuestion(theme, round)
-            }
-
             val personalLevel = when {
                 round <= 1 -> "лёгкие, весёлые, неличные вопросы для знакомства"
                 round <= 3 -> "чуть более личные, но всё ещё комфортные вопросы"
@@ -68,36 +65,31 @@ class GeminiService {
                 Верни ТОЛЬКО текст вопроса, без кавычек и пояснений.
             """.trimIndent()
 
-            // 1) Пробуем proxy (если задан)
-            proxyUrl?.let { proxy ->
-                tryProxy(proxy, prompt)?.let { return@withContext it }
+            // 1) Через Cloudflare Worker (рекомендуется для РФ)
+            if (baseUrl.isNotBlank()) {
+                for (model in models) {
+                    callViaBase(baseUrl, model, prompt)?.let { return@withContext it }
+                }
             }
 
-            // 2) Прямой вызов Gemini (несколько моделей)
-            for (model in models) {
-                tryDirect(model, prompt)?.let { return@withContext it }
+            // 2) Прямой вызов (работает только если IP не из РФ / ключ валидный)
+            if (apiKey.isNotBlank()) {
+                for (model in models) {
+                    callDirect(model, prompt)?.let { return@withContext it }
+                }
             }
 
-            // 3) Всегда есть fallback — игра не ломается
+            // 3) Fallback — игра всегда продолжается
             fallbackQuestion(theme, round)
         }
 
-    private fun tryDirect(model: String, prompt: String): String? {
+    private fun callViaBase(base: String, model: String, prompt: String): String? {
         return try {
-            val url =
-                "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
-            val bodyJson = JSONObject().apply {
-                put("contents", JSONArray().put(JSONObject().apply {
-                    put("parts", JSONArray().put(JSONObject().put("text", prompt)))
-                }))
-                put("generationConfig", JSONObject().apply {
-                    put("temperature", 0.95)
-                    put("maxOutputTokens", 120)
-                })
-            }
+            val url = "$base/v1beta/models/$model:generateContent"
+            val bodyJson = buildBody(prompt)
             val request = Request.Builder()
                 .url(url)
-                .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+                .post(bodyJson.toRequestBody("application/json".toMediaType()))
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -110,28 +102,36 @@ class GeminiService {
         }
     }
 
-    private fun tryProxy(proxy: String, prompt: String): String? {
+    private fun callDirect(model: String, prompt: String): String? {
         return try {
-            val bodyJson = JSONObject().put("prompt", prompt).put("key", apiKey)
+            val url =
+                "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+            val bodyJson = buildBody(prompt)
             val request = Request.Builder()
-                .url(proxy)
-                .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
+                .url(url)
+                .post(bodyJson.toRequestBody("application/json".toMediaType()))
                 .build()
+
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string() ?: return null
                 if (!response.isSuccessful) return null
-                // ожидаем либо чистый текст, либо { "text": "..." }
-                try {
-                    val json = JSONObject(body)
-                    json.optString("text").ifBlank { json.optString("question") }
-                        .ifBlank { extractText(body) }
-                } catch (_: Exception) {
-                    body.trim().takeIf { it.length in 5..300 }
-                }
+                extractText(body)
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun buildBody(prompt: String): String {
+        return JSONObject().apply {
+            put("contents", JSONArray().put(JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+            }))
+            put("generationConfig", JSONObject().apply {
+                put("temperature", 0.95)
+                put("maxOutputTokens", 120)
+            })
+        }.toString()
     }
 
     private fun extractText(body: String): String? {
