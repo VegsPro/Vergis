@@ -125,4 +125,8 @@ class AuthViewModel : ViewModel() {
     fun clearError() {
         _error.value = null
     }
+
+    fun setError(msg: String) {
+        _error.value = msg
+    }
 }

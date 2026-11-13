@@ -15,6 +15,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class FirebaseRepository {
     private val auth = FirebaseAuth.getInstance()
@@ -291,34 +293,49 @@ class FirebaseRepository {
         }
     }
 
-    suspend fun uploadAvatar(bytes: ByteArray): Result<String> {
-        return try {
-            val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
-            val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            val body = okhttp3.FormBody.Builder()
-                .add("key", "be4f9cf74bf01c7e56308e8b707a00f1")
-                .add("image", b64)
+    suspend fun uploadAvatar(bytes: ByteArray): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val user = currentUser ?: return@withContext Result.failure(Exception("Не авторизован"))
+            if (bytes.isEmpty()) return@withContext Result.failure(Exception("Пустой файл"))
+
+            val mediaType = "image/jpeg".toMediaType()
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("key", "be4f9cf74bf01c7e56308e8b707a00f1")
+                .addFormDataPart(
+                    "image",
+                    "avatar.jpg",
+                    bytes.toRequestBody(mediaType)
+                )
                 .build()
-            val request = okhttp3.Request.Builder()
+
+            val request = Request.Builder()
                 .url("https://api.imgbb.com/1/upload")
                 .post(body)
                 .build()
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(60, TimeUnit.SECONDS)
                 .build()
+
             client.newCall(request).execute().use { response ->
                 val raw = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("ImgBB: ${response.code}"))
+                    return@withContext Result.failure(
+                        Exception("ImgBB ${response.code}: ${raw.take(120)}")
+                    )
                 }
                 val json = org.json.JSONObject(raw)
                 if (!json.optBoolean("success", false)) {
-                    return Result.failure(Exception("ImgBB: загрузка не удалась"))
+                    val err = json.optJSONObject("error")?.optString("message") ?: raw.take(120)
+                    return@withContext Result.failure(Exception("ImgBB: $err"))
                 }
-                val url = json.getJSONObject("data").optString("display_url")
-                    .ifBlank { json.getJSONObject("data").optString("url") }
-                if (url.isBlank()) return Result.failure(Exception("ImgBB: нет URL"))
+                val data = json.getJSONObject("data")
+                val url = data.optString("display_url").ifBlank { data.optString("url") }
+                if (url.isBlank()) return@withContext Result.failure(Exception("ImgBB: нет URL"))
+
                 db.child("users").child(user.uid).child("avatarUrl").setValue(url).await()
                 try {
                     val profile = UserProfileChangeRequest.Builder()
@@ -329,7 +346,7 @@ class FirebaseRepository {
                 Result.success(url)
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception(e.message ?: e.javaClass.simpleName))
         }
     }
 

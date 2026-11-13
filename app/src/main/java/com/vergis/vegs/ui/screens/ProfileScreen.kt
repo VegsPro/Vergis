@@ -56,19 +56,33 @@ fun ProfileScreen(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         try {
-            val bitmap = if (Build.VERSION.SDK_INT >= 28) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri))
+            var bitmap = if (Build.VERSION.SDK_INT >= 28) {
+                val source = ImageDecoder.createSource(context.contentResolver, uri)
+                ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.isMutableRequired = true
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                }
             } else {
                 @Suppress("DEPRECATION")
                 MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
             }
-            val w = 512
-            val h = (512f * bitmap.height / bitmap.width.coerceAtLeast(1)).toInt().coerceAtLeast(1)
+            // force software ARGB for compress
+            if (bitmap.config != Bitmap.Config.ARGB_8888) {
+                bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            }
+            val maxSide = 512
+            val scale = maxSide.toFloat() / maxOf(bitmap.width, bitmap.height)
+            val w = (bitmap.width * scale).toInt().coerceAtLeast(1)
+            val h = (bitmap.height * scale).toInt().coerceAtLeast(1)
             val scaled = Bitmap.createScaledBitmap(bitmap, w, h, true)
             val baos = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 80, baos)
-            viewModel.uploadAvatar(baos.toByteArray())
-        } catch (_: Exception) {}
+            scaled.compress(Bitmap.CompressFormat.JPEG, 82, baos)
+            val bytes = baos.toByteArray()
+            if (bytes.isEmpty()) throw Exception("Не удалось сжать фото")
+            viewModel.uploadAvatar(bytes)
+        } catch (e: Exception) {
+            viewModel.setError(e.message ?: "Не удалось обработать фото")
+        }
     }
 
     Scaffold(
@@ -92,51 +106,69 @@ fun ProfileScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(28.dp))
+
+            // Avatar with camera badge OUTSIDE the clip
             Box(
-                Modifier
-                    .size(108.dp)
-                    .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Color(0xFF1E3A8A), BluePrimary)))
-                    .clickable {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        picker.launch("image/*")
-                    },
+                modifier = Modifier.size(120.dp),
                 contentAlignment = Alignment.Center
             ) {
-                if (avatarUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = avatarUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Text(
-                        (displayName.ifBlank { "?" }).take(1).uppercase(),
-                        color = Color.White,
-                        fontSize = 40.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Box(
+                    Modifier
+                        .size(100.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(Color(0xFF1E3A8A), BluePrimary)))
+                        .clickable {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            picker.launch("image/*")
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (avatarUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text(
+                            (displayName.ifBlank { "?" }).take(1).uppercase(),
+                            color = Color.White,
+                            fontSize = 36.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
+                // camera badge — not clipped by avatar
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(x = (-2).dp, y = (-2).dp)
-                        .size(30.dp)
+                        .offset(x = (-6).dp, y = (-6).dp)
+                        .size(34.dp)
                         .clip(CircleShape)
                         .background(BluePrimary)
-                        .border(2.dp, BgDeep, CircleShape),
+                        .border(2.dp, BgDeep, CircleShape)
+                        .clickable {
+                            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            picker.launch("image/*")
+                        },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.CameraAlt, null, tint = Color.White, modifier = Modifier.size(15.dp))
+                    Icon(
+                        Icons.Default.CameraAlt,
+                        contentDescription = "Сменить фото",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
+
             Text(
-                "Нажми, чтобы сменить фото",
+                if (loading) "Загружаем…" else "Нажми, чтобы сменить фото",
                 color = TextMuted,
                 fontSize = 12.sp,
-                modifier = Modifier.padding(top = 10.dp, bottom = 28.dp)
+                modifier = Modifier.padding(top = 12.dp, bottom = 28.dp)
             )
 
             Text("Имя", color = TextMuted, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
@@ -159,7 +191,12 @@ fun ProfileScreen(
             )
 
             if (error != null) {
-                Text(error!!, color = Error, modifier = Modifier.padding(top = 12.dp).fillMaxWidth(), fontSize = 13.sp)
+                Text(
+                    error!!,
+                    color = Error,
+                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+                    fontSize = 13.sp
+                )
             }
 
             Spacer(Modifier.height(24.dp))
