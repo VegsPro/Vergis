@@ -30,10 +30,14 @@ class GeminiService {
     private val baseUrl = BuildConfig.GEMINI_BASE_URL.trim().removeSuffix("/")
 
     // Модели в порядке предпочтения (как в рабочем скрипте)
+    // Актуальные модели (ноябрь 2026). 2.5-flash ещё работает, но скоро редирект.
+    // Пробуем от новых к старым — первый успешный ответ идёт в игру.
     private val models = listOf(
+        "gemini-3.8-flash",
+        "gemini-3.5-flash",
+        "gemini-3-flash-preview",
         "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash"
+        "gemini-2.0-flash"
     )
 
     suspend fun generateQuestion(theme: String, round: Int, playerCount: Int): String =
