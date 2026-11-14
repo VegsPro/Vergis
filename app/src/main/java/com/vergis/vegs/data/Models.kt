@@ -10,6 +10,7 @@ data class RoomInfo(
     val status: String = "waiting",
     val currentRound: Int = 0,
     val currentQuestion: String = "",
+    val nextQuestion: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val players: Map<String, PlayerInfo> = emptyMap(),
     val answers: Map<String, String> = emptyMap(),
@@ -30,6 +31,15 @@ data class UserProfile(
     val email: String = "",
     val displayName: String = "",
     val avatarUrl: String = ""
+)
+
+data class ChatMessage(
+    val id: String = "",
+    val uid: String = "",
+    val name: String = "",
+    val avatarUrl: String = "",
+    val text: String = "",
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 val DEFAULT_THEMES = listOf(

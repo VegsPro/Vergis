@@ -250,13 +250,16 @@ class FirebaseRepository {
         val usedSnap = db.child("rooms").child(roomId).child("usedQuestions").get().await()
         val used = usedSnap.children.mapNotNull { it.getValue(String::class.java) }.toMutableList()
         if (question.isNotBlank() && question !in used) used.add(question)
+        // keep only last 80 to avoid huge nodes
+        val trimmed = if (used.size > 80) used.takeLast(80) else used
         val now = System.currentTimeMillis()
         val updates = mapOf(
             "currentRound" to nextRound,
             "currentQuestion" to question,
+            "nextQuestion" to "",
             "answers" to emptyMap<String, String>(),
             "readyForNext" to emptyMap<String, Boolean>(),
-            "usedQuestions" to used,
+            "usedQuestions" to trimmed,
             "lastActivityAt" to now
         )
         db.child("rooms").child(roomId).updateChildren(updates).await()
@@ -357,6 +360,51 @@ class FirebaseRepository {
     }
 
 
+
+    suspend fun setNextQuestion(roomId: String, question: String) {
+        db.child("rooms").child(roomId).child("nextQuestion").setValue(question).await()
+        touchActivity(roomId)
+    }
+
+    suspend fun sendChatMessage(roomId: String, text: String, name: String, avatarUrl: String) {
+        val user = currentUser ?: return
+        val ref = db.child("rooms").child(roomId).child("chat").push()
+        val msg = mapOf(
+            "uid" to user.uid,
+            "name" to name,
+            "avatarUrl" to avatarUrl,
+            "text" to text,
+            "timestamp" to System.currentTimeMillis()
+        )
+        ref.setValue(msg).await()
+        touchActivity(roomId)
+    }
+
+    fun observeChat(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<ChatMessage>()
+                for (c in snapshot.children) {
+                    val id = c.key ?: continue
+                    list.add(
+                        ChatMessage(
+                            id = id,
+                            uid = c.child("uid").getValue(String::class.java) ?: "",
+                            name = c.child("name").getValue(String::class.java) ?: "",
+                            avatarUrl = c.child("avatarUrl").getValue(String::class.java) ?: "",
+                            text = c.child("text").getValue(String::class.java) ?: "",
+                            timestamp = c.child("timestamp").getValue(Long::class.java) ?: 0L
+                        )
+                    )
+                }
+                trySend(list.sortedBy { it.timestamp }.takeLast(100))
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        db.child("rooms").child(roomId).child("chat").addValueEventListener(listener)
+        awaitClose { db.child("rooms").child(roomId).child("chat").removeEventListener(listener) }
+    }
+
     private fun parseRoom(snapshot: DataSnapshot): RoomInfo? {
         if (!snapshot.exists()) return null
         val id = snapshot.key ?: return null
@@ -368,6 +416,7 @@ class FirebaseRepository {
         val status = snapshot.child("status").getValue(String::class.java) ?: "waiting"
         val currentRound = snapshot.child("currentRound").getValue(Int::class.java) ?: 0
         val currentQuestion = snapshot.child("currentQuestion").getValue(String::class.java) ?: ""
+        val nextQuestion = snapshot.child("nextQuestion").getValue(String::class.java) ?: ""
         val createdAt = snapshot.child("createdAt").getValue(Long::class.java) ?: 0L
         val lastActivityAt = snapshot.child("lastActivityAt").getValue(Long::class.java) ?: createdAt
 
@@ -407,6 +456,7 @@ class FirebaseRepository {
             status = status,
             currentRound = currentRound,
             currentQuestion = currentQuestion,
+            nextQuestion = nextQuestion,
             createdAt = createdAt,
             players = players,
             answers = answers,

@@ -1,19 +1,24 @@
 package com.vergis.vegs.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vergis.vegs.ai.GeminiService
+import com.vergis.vegs.data.ChatMessage
 import com.vergis.vegs.data.FirebaseRepository
 import com.vergis.vegs.data.RoomInfo
+import com.vergis.vegs.util.Notifications
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class GameViewModel : ViewModel() {
+class GameViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = FirebaseRepository()
     private val gemini = GeminiService()
+    private val appContext: Context = app.applicationContext
 
     private val _room = MutableStateFlow<RoomInfo?>(null)
     val room: StateFlow<RoomInfo?> = _room.asStateFlow()
@@ -24,30 +29,67 @@ class GameViewModel : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    private val _myAnswer = MutableStateFlow("")
-    val myAnswer: StateFlow<String> = _myAnswer.asStateFlow()
+    private val _chat = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chat: StateFlow<List<ChatMessage>> = _chat.asStateFlow()
 
     private var observeJob: Job? = null
-    private var lastProcessedRound = -1
+    private var chatJob: Job? = null
     private var advancing = false
+    private var prefetching = false
+    private var lastNotifiedAnswerCount = -1
+    private var appInForeground = true
 
     val currentUid: String? get() = repo.currentUser?.uid
 
+    fun setForeground(value: Boolean) {
+        appInForeground = value
+    }
+
     fun observe(roomId: String) {
         observeJob?.cancel()
+        chatJob?.cancel()
+        lastNotifiedAnswerCount = -1
         observeJob = viewModelScope.launch {
             repo.observeRoom(roomId).collect { r ->
+                val prev = _room.value
                 _room.value = r
-                // Auto-start if full and creator
-                if (r != null && r.status == "waiting" &&
+                if (r == null) return@collect
+
+                // Notifications when someone answered while backgrounded
+                val ansCount = r.answers.size
+                if (prev != null &&
+                    r.status == "playing" &&
+                    ansCount > lastNotifiedAnswerCount &&
+                    lastNotifiedAnswerCount >= 0 &&
+                    !appInForeground
+                ) {
+                    val newUid = r.answers.keys - (prev.answers.keys)
+                    val name = newUid.firstOrNull()?.let { r.players[it]?.name } ?: "Игрок"
+                    Notifications.showAnswer(
+                        appContext, name, ansCount, r.players.size, r.id
+                    )
+                }
+                lastNotifiedAnswerCount = ansCount
+
+                if (r.status == "waiting" &&
                     r.players.size >= r.maxPlayers &&
                     r.creatorId == currentUid &&
                     !advancing
                 ) {
                     startGameIfNeeded(r)
                 }
-                // Auto-advance when all ready
-                if (r != null && r.status == "playing" &&
+
+                // Prefetch next question once ≥1 answer
+                if (r.status == "playing" &&
+                    r.answers.isNotEmpty() &&
+                    r.nextQuestion.isBlank() &&
+                    r.creatorId == currentUid &&
+                    !prefetching
+                ) {
+                    prefetchNext(r)
+                }
+
+                if (r.status == "playing" &&
                     r.players.isNotEmpty() &&
                     r.readyForNext.size >= r.players.size &&
                     r.creatorId == currentUid &&
@@ -56,6 +98,9 @@ class GameViewModel : ViewModel() {
                     advanceRoundIfNeeded(r)
                 }
             }
+        }
+        chatJob = viewModelScope.launch {
+            repo.observeChat(roomId).collect { _chat.value = it }
         }
     }
 
@@ -75,15 +120,32 @@ class GameViewModel : ViewModel() {
         }
     }
 
+    private fun prefetchNext(room: RoomInfo) {
+        prefetching = true
+        viewModelScope.launch {
+            try {
+                val nextRound = room.currentRound + 1
+                val used = room.usedQuestions + listOfNotNull(room.currentQuestion.takeIf { it.isNotBlank() })
+                val q = gemini.generateQuestion(room.theme, nextRound, room.players.size, used)
+                if (q.isNotBlank()) repo.setNextQuestion(room.id, q)
+            } catch (_: Exception) {
+            } finally {
+                prefetching = false
+            }
+        }
+    }
+
     private fun advanceRoundIfNeeded(room: RoomInfo) {
         advancing = true
         viewModelScope.launch {
             _loading.value = true
             try {
                 val next = room.currentRound + 1
-                val question = gemini.generateQuestion(room.theme, next, room.players.size, room.usedQuestions)
+                val used = room.usedQuestions + listOfNotNull(room.currentQuestion.takeIf { it.isNotBlank() })
+                val question = room.nextQuestion.takeIf { it.isNotBlank() }
+                    ?: gemini.generateQuestion(room.theme, next, room.players.size, used)
                 repo.advanceRound(room.id, next, question)
-                lastProcessedRound = next
+                lastNotifiedAnswerCount = -1
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
@@ -108,7 +170,6 @@ class GameViewModel : ViewModel() {
         if (answer.isBlank()) return
         viewModelScope.launch {
             repo.submitAnswer(roomId, answer.trim())
-            _myAnswer.value = answer.trim()
         }
     }
 
@@ -118,11 +179,19 @@ class GameViewModel : ViewModel() {
         }
     }
 
+    fun sendChat(roomId: String, text: String, name: String, avatarUrl: String) {
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            repo.sendChatMessage(roomId, text.trim(), name, avatarUrl)
+        }
+    }
+
     fun leave(roomId: String) {
         viewModelScope.launch {
             repo.leaveRoom(roomId)
         }
         observeJob?.cancel()
+        chatJob?.cancel()
     }
 
     fun clearError() {
@@ -131,6 +200,7 @@ class GameViewModel : ViewModel() {
 
     override fun onCleared() {
         observeJob?.cancel()
+        chatJob?.cancel()
         super.onCleared()
     }
 }
