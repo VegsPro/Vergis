@@ -178,6 +178,7 @@ fun RoomsScreen(
                 }
             }
 
+            } // Column
             if (joinError != null) {
                 Snackbar(
                     modifier = Modifier
@@ -192,7 +193,6 @@ fun RoomsScreen(
                     }
                 ) { Text(joinError!!) }
             }
-            } // Column
         } // Box
     }
 
