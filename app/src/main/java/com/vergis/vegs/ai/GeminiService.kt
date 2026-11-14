@@ -45,8 +45,14 @@ class GeminiService {
     ): String = withContext(Dispatchers.IO) {
         val n = playerCount.coerceAtLeast(1)
         val audience = when {
-            n <= 2 -> "В комнате ровно $n игрока (пара / двое). Формулируй вопрос на «ты» или «вы двое». Запрещено: «все в комнате», «каждый из вас пятеро», «кто-нибудь из компании»."
-            else -> "В комнате $n игроков. Можно обращаться ко всем."
+            n <= 2 -> (
+                "В комнате РОВНО $n игрока (только двое). " +
+                "Обращайся на «ты» или «вы двое». " +
+                "СТРОГО ЗАПРЕЩЕНО: формулировки для компании 3+, " +
+                "«все», «каждый из вас», «кто-нибудь из присутствующих», «кто из компании», " +
+                "«поднимите руки», обращение к группе."
+            )
+            else -> "В комнате $n игроков. Можно обращаться ко всем присутствующим."
         }
 
         val themeRules = themeRules(theme)
@@ -65,12 +71,18 @@ class GeminiService {
             $audience
             Раунд: $round (чем выше — тем можно чуть личнее, но ТОЛЬКО в рамках темы «$theme»).
 
+            Сначала мысленно проверь: вопрос строго по теме «$theme» и не повторяет / не перефразирует ни один вопрос из списка уже заданных (если список не пуст). Проверку в ответ не выводи.
+
             ЗАПРЕЩЕНО:
             - уходить в другую тему
+            - повторять или перефразировать уже заданные вопросы
             - писать «(тема: …)», «(в контексте: …)»
             - нумерацию, кавычки, пояснения
             - шаблоны не по теме (например «кого любишь» при теме «Смешные вопросы»)
+            - вопросы, рассчитанные на компанию из 3+ человек, если в комнате только 2
             $avoidBlock
+            СТРОГОЕ НАПОМИНАНИЕ: вопрос должен быть на русском, коротким, в 1 предложение, строго по теме «$theme» и семантически не похож на уже заданные.
+
             Ответ: только текст вопроса, 1 предложение.
         """.trimIndent()
 
@@ -206,8 +218,19 @@ class GeminiService {
         val pool = themePool(theme, round, playerCount)
         val fresh = pool.filter { isFresh(it, used) && matchesTheme(it, theme) }
         if (fresh.isNotEmpty()) return fresh.random()
-        // last resort: rotate with round index, still no meta suffix
-        return pool[(round + used.size) % pool.size]
+        // last resort: mutate so never 1:1 repeat
+        val base = pool[(round + used.size) % pool.size].trimEnd('?', '!')
+        val twists = listOf(
+            "и почему", "без шуток", "если честно", "прямо сейчас",
+            "в двух словах", "с примером", "как в кино"
+        )
+        var candidate = "$base — ${twists[(round + used.size) % twists.size]}?"
+        var i = 0
+        while (!isFresh(candidate, used) && i < twists.size) {
+            candidate = "$base — ${twists[(round + used.size + i) % twists.size]}?"
+            i++
+        }
+        return candidate
     }
 
     private fun themePool(theme: String, round: Int, playerCount: Int): List<String> {

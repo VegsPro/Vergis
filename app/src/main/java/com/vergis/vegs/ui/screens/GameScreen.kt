@@ -6,6 +6,11 @@ import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.platform.LocalContext
+import com.vergis.vegs.util.ChatSounds
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -76,8 +81,35 @@ fun GameScreen(
     var chatInput by remember { mutableStateOf("") }
     var chatSeenCount by remember { mutableIntStateOf(0) }
     val chatUnread = (chat.size - chatSeenCount).coerceAtLeast(0)
+    var toastMsg by remember { mutableStateOf<ChatMessage?>(null) }
+    val context = LocalContext.current
+    var chatInitialized by remember { mutableStateOf(false) }
+
     LaunchedEffect(chatOpen, chat.size) {
         if (chatOpen) chatSeenCount = chat.size
+    }
+    // floating toast + sound for new messages while chat closed
+    LaunchedEffect(chat.size) {
+        if (!chatInitialized) {
+            chatSeenCount = chat.size
+            chatInitialized = true
+            return@LaunchedEffect
+        }
+        if (chat.isEmpty()) return@LaunchedEffect
+        val last = chat.last()
+        if (chatOpen) {
+            chatSeenCount = chat.size
+            return@LaunchedEffect
+        }
+        // own messages: no toast/sound
+        if (last.uid == myUid) {
+            chatSeenCount = chat.size // still count as seen? no - only when open
+            return@LaunchedEffect
+        }
+        toastMsg = last
+        ChatSounds.playMessage(context)
+        kotlinx.coroutines.delay(2800)
+        if (toastMsg?.id == last.id) toastMsg = null
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -274,7 +306,8 @@ fun GameScreen(
                         androidx.compose.foundation.Image(
                             painter = painterResource(R.drawable.penguin_think),
                             contentDescription = null,
-                            modifier = Modifier.size(140.dp)
+                            modifier = Modifier.size(140.dp),
+                            contentScale = ContentScale.Fit
                         )
                     }
                     PrimaryGradientButton(
@@ -351,6 +384,59 @@ fun GameScreen(
                 onClose = { chatSeenCount = chat.size; chatOpen = false },
                 myUid = myUid
             )
+        }
+
+        // Chat toast (when panel closed)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = toastMsg != null && !chatOpen,
+            enter = slideInVertically(tween(280)) { -it / 2 } + fadeIn(tween(280)),
+            exit = slideOutVertically(tween(320)) { -it / 2 } + fadeOut(tween(320)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 56.dp)
+                .padding(horizontal = 20.dp)
+        ) {
+            val m = toastMsg
+            if (m != null) {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xF0121C2E))
+                        .border(1.dp, GlassStroke, RoundedCornerShape(16.dp))
+                        .clickable {
+                            chatOpen = true
+                            chatSeenCount = chat.size
+                            toastMsg = null
+                        }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(Brush.linearGradient(listOf(Color(0xFF1E3A8A), BluePrimary))),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (m.avatarUrl.isNotBlank()) {
+                            AsyncImage(m.avatarUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        } else {
+                            Text(m.name.take(1).uppercase(), color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f, fill = false)) {
+                        Text(m.name, color = BlueSoft, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            m.text,
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            maxLines = 2
+                        )
+                    }
+                }
+            }
         }
 
         SnackbarHost(
