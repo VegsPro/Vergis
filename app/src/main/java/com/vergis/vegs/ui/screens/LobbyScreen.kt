@@ -112,25 +112,31 @@ fun LobbyScreen(
                 .padding(16.dp)
         ) {
             GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Тема: ${r.theme}", color = TextPrimary, fontWeight = FontWeight.Medium)
-                Text(
-                    "Игроки ${r.players.size} / ${r.maxPlayers}",
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-                if (r.hidden) Text("🔒 Скрытая", color = TextMuted, fontSize = 12.sp)
-                if (r.friendsOnly) Text("👥 Только друзья", color = TextMuted, fontSize = 12.sp)
-                Spacer(Modifier.height(8.dp))
-                if (r.players.size < r.maxPlayers) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text("Тема: ${r.theme}", color = TextPrimary, fontWeight = FontWeight.Medium)
                     Text(
-                        "Ожидаем ещё ${r.maxPlayers - r.players.size}…",
+                        "Игроки ${r.players.size} / ${r.maxPlayers}",
                         color = TextSecondary,
                         fontSize = 13.sp,
-                        modifier = Modifier.alpha(alpha)
+                        modifier = Modifier.padding(top = 6.dp)
                     )
-                } else {
-                    Text("Все собрались — запускаем", color = Success, fontWeight = FontWeight.Medium)
+                    if (r.hidden) {
+                        Text("Скрытая комната", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    if (r.friendsOnly) {
+                        Text("Только для друзей", color = TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    if (r.players.size < r.maxPlayers) {
+                        Text(
+                            "Ожидаем ещё ${r.maxPlayers - r.players.size}…",
+                            color = BlueSoft,
+                            fontSize = 13.sp,
+                            modifier = Modifier.alpha(alpha)
+                        )
+                    } else {
+                        Text("Все собрались — запускаем", color = Success, fontWeight = FontWeight.Medium)
+                    }
                 }
             }
 
