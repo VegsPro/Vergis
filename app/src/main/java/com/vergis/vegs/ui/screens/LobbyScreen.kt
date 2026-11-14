@@ -17,6 +17,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
+import com.vergis.vegs.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -105,7 +108,16 @@ fun LobbyScreen(
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
+            if (r.players.size < r.maxPlayers) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                    Image(
+                        painter = painterResource(R.drawable.penguin_wait),
+                        contentDescription = null,
+                        modifier = Modifier.size(120.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Text("Игроки", color = TextPrimary, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(10.dp))
 

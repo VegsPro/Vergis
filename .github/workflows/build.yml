@@ -7,7 +7,7 @@ on:
 
 env:
   APP_NAME: Vergis
-  VERSION_NAME: 1.1.5
+  VERSION_NAME: 1.1.6
 
 jobs:
   build:

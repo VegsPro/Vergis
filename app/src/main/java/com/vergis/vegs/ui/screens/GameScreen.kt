@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import com.vergis.vegs.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -71,6 +74,11 @@ fun GameScreen(
     var hasSubmitted by remember { mutableStateOf(false) }
     var chatOpen by remember { mutableStateOf(false) }
     var chatInput by remember { mutableStateOf("") }
+    var chatSeenCount by remember { mutableIntStateOf(0) }
+    val chatUnread = (chat.size - chatSeenCount).coerceAtLeast(0)
+    LaunchedEffect(chatOpen, chat.size) {
+        if (chatOpen) chatSeenCount = chat.size
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
     var lastAnswerCount by remember { mutableIntStateOf(-1) }
@@ -119,8 +127,7 @@ fun GameScreen(
     val allAnswered = r != null && r.players.isNotEmpty() && r.answers.size >= r.players.size
     val iAmReady = r?.readyForNext?.get(myUid) == true
     val readyCount = r?.readyForNext?.size ?: 0
-    val unreadApprox = chat.size // simple badge
-
+    
     Box(
         Modifier
             .fillMaxSize()
@@ -157,11 +164,13 @@ fun GameScreen(
                 Box {
                     CircleIconButton(onClick = {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        chatOpen = !chatOpen
+                        val opening = !chatOpen
+                        chatOpen = opening
+                        if (opening) chatSeenCount = chat.size
                     }) {
                         Icon(Icons.Default.ChatBubbleOutline, null, tint = TextPrimary, modifier = Modifier.size(20.dp))
                     }
-                    if (chat.isNotEmpty()) {
+                    if (chatUnread > 0 && !chatOpen) {
                         Box(
                             Modifier
                                 .align(Alignment.TopEnd)
@@ -256,7 +265,18 @@ fun GameScreen(
                         shape = RoundedCornerShape(16.dp),
                         colors = fieldColors()
                     )
-                    Spacer(Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.foundation.Image(
+                            painter = painterResource(R.drawable.penguin_think),
+                            contentDescription = null,
+                            modifier = Modifier.size(140.dp)
+                        )
+                    }
                     PrimaryGradientButton(
                         text = "Отправить ответ",
                         enabled = answerText.isNotBlank(),
@@ -328,7 +348,7 @@ fun GameScreen(
                     viewModel.sendChat(roomId, chatInput, displayName.ifBlank { "Игрок" }, avatarUrl)
                     chatInput = ""
                 },
-                onClose = { chatOpen = false },
+                onClose = { chatSeenCount = chat.size; chatOpen = false },
                 myUid = myUid
             )
         }
