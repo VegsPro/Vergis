@@ -69,6 +69,7 @@ fun GameScreen(
     val room by viewModel.room.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val chat by viewModel.chat.collectAsState()
+    val leaveToast by viewModel.leaveToast.collectAsState()
     val authVm: AuthViewModel = viewModel()
     val displayName by authVm.displayName.collectAsState()
     val avatarUrl by authVm.avatarUrl.collectAsState()
@@ -131,6 +132,12 @@ fun GameScreen(
     }
 
     LaunchedEffect(roomId) { viewModel.observe(roomId) }
+    LaunchedEffect(leaveToast) {
+        leaveToast?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearLeaveToast()
+        }
+    }
     LaunchedEffect(room?.currentRound) {
         answerText = ""
         hasSubmitted = false
@@ -183,7 +190,7 @@ fun GameScreen(
             ) {
                 CircleIconButton(onClick = {
                     view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    viewModel.leave(roomId)
+                    viewModel.leave(roomId, "left")
                     onLeave()
                 }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = TextPrimary, modifier = Modifier.size(20.dp))

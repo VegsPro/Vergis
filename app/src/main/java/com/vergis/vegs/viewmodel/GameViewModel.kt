@@ -34,10 +34,16 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     private var observeJob: Job? = null
     private var chatJob: Job? = null
+    private var eventsJob: Job? = null
+    private var presenceJob: Job? = null
     private var advancing = false
     private var prefetching = false
     private var lastNotifiedAnswerCount = -1
     private var appInForeground = true
+    private var lastEventTs = 0L
+
+    private val _leaveToast = MutableStateFlow<String?>(null)
+    val leaveToast: StateFlow<String?> = _leaveToast.asStateFlow()
 
     val currentUid: String? get() = repo.currentUser?.uid
 
@@ -102,6 +108,41 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         chatJob = viewModelScope.launch {
             repo.observeChat(roomId).collect { _chat.value = it }
         }
+        eventsJob?.cancel()
+        lastEventTs = 0L
+        eventsJob = viewModelScope.launch {
+            repo.observeRoomEvents(roomId).collect { events ->
+                val fresh = events.filter { it.timestamp > lastEventTs && it.uid != currentUid }
+                if (fresh.isNotEmpty()) {
+                    val e = fresh.last()
+                    val msg = if (e.type == "afk") "${e.name} отошёл (AFK)" else "${e.name} вышел из комнаты"
+                    _leaveToast.value = msg
+                    if (!appInForeground) {
+                        Notifications.showPlayerLeft(appContext, e.name, e.type)
+                    }
+                }
+                lastEventTs = events.maxOfOrNull { it.timestamp } ?: lastEventTs
+            }
+        }
+        presenceJob?.cancel()
+        presenceJob = viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(10_000)
+                if (appInForeground) {
+                    try { repo.heartbeat(roomId) } catch (_: Exception) {}
+                }
+                val r = _room.value ?: continue
+                if (r.creatorId != currentUid) continue
+                val now = System.currentTimeMillis()
+                for (pl in r.players.values) {
+                    if (pl.uid == currentUid) continue
+                    val seen = pl.lastSeenAt.takeIf { it > 0 } ?: pl.joinedAt
+                    if (now - seen > 30_000) {
+                        try { repo.kickAfk(roomId, pl.uid, pl.name) } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
     }
 
     private fun startGameIfNeeded(room: RoomInfo) {
@@ -155,11 +196,11 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createRoom(name: String, maxPlayers: Int, theme: String, password: String, onCreated: (String) -> Unit) {
+    fun createRoom(name: String, maxPlayers: Int, theme: String, password: String, hidden: Boolean = false, friendsOnly: Boolean = false, onCreated: (String) -> Unit) {
         viewModelScope.launch {
             _loading.value = true
             _error.value = null
-            val result = repo.createRoom(name, maxPlayers, theme, password)
+            val result = repo.createRoom(name, maxPlayers, theme, password, hidden, friendsOnly)
             _loading.value = false
             result.onSuccess { onCreated(it) }
                 .onFailure { _error.value = it.message }
@@ -186,21 +227,29 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun leave(roomId: String) {
+    fun leave(roomId: String, reason: String = "left") {
         viewModelScope.launch {
-            repo.leaveRoom(roomId)
+            repo.leaveRoom(roomId, reason)
         }
         observeJob?.cancel()
         chatJob?.cancel()
+        eventsJob?.cancel()
+        presenceJob?.cancel()
     }
 
     fun clearError() {
         _error.value = null
     }
 
+    fun clearLeaveToast() {
+        _leaveToast.value = null
+    }
+
     override fun onCleared() {
         observeJob?.cancel()
         chatJob?.cancel()
+        eventsJob?.cancel()
+        presenceJob?.cancel()
         super.onCleared()
     }
 }

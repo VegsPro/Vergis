@@ -53,4 +53,47 @@ object Notifications {
             NotificationManagerCompat.from(context).notify(roomId.hashCode() and 0x7FFF, notif)
         } catch (_: SecurityException) {}
     }
+
+    fun showInvite(context: Context, fromName: String, roomName: String, roomId: String) {
+        ensureChannel(context)
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("roomId", roomId)
+            putExtra("invite", true)
+        }
+        val pi = PendingIntent.getActivity(
+            context, (roomId + "inv").hashCode(), intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setContentTitle("Приглашение в комнату")
+            .setContentText("$fromName зовёт в «$roomName»")
+            .setAutoCancel(true)
+            .setContentIntent(pi)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(("inv" + roomId).hashCode() and 0x7FFF, notif)
+        } catch (_: SecurityException) {}
+    }
+
+    fun showPlayerLeft(context: Context, name: String, reason: String) {
+        ensureChannel(context)
+        val text = when (reason) {
+            "afk" -> "$name отошёл (AFK) и покинул комнату"
+            else -> "$name вышел из комнаты"
+        }
+        val notif = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Vergis")
+            .setContentText(text)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(name.hashCode() and 0x7FFF, notif)
+        } catch (_: SecurityException) {}
+    }
 }
+

@@ -31,6 +31,8 @@ import com.vergis.vegs.data.RoomInfo
 import com.vergis.vegs.ui.components.GlassCard
 import com.vergis.vegs.ui.theme.*
 import com.vergis.vegs.viewmodel.AuthViewModel
+import com.vergis.vegs.viewmodel.FriendsViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vergis.vegs.viewmodel.RoomsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,8 +43,12 @@ fun RoomsScreen(
     onCreateRoom: () -> Unit,
     onJoinRoom: (String) -> Unit,
     onLogout: () -> Unit,
-    onProfile: () -> Unit
+    onProfile: () -> Unit,
+    onFriends: () -> Unit
 ) {
+    val friendsVm: FriendsViewModel = viewModel()
+    val invites by friendsVm.invites.collectAsState()
+    LaunchedEffect(Unit) { friendsVm.start() }
     val rooms by viewModel.rooms.collectAsState()
     val loading by viewModel.loading.collectAsState()
     val joinError by viewModel.joinError.collectAsState()
@@ -73,6 +79,9 @@ fun RoomsScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = onFriends) {
+                        Text("Друзья", color = BlueBright, fontSize = 13.sp)
+                    }
                     TextButton(onClick = onProfile) {
                         Text("Профиль", color = BlueBright, fontSize = 13.sp)
                     }
@@ -99,13 +108,37 @@ fun RoomsScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            Column(Modifier.fillMaxSize()) {
+                if (invites.isNotEmpty()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        invites.forEach { inv ->
+                            GlassCard(modifier = Modifier.fillMaxWidth(), radius = 14.dp) {
+                                Column {
+                                    Text("Приглашение", color = BlueSoft, fontSize = 12.sp)
+                                    Text("${inv.fromName} → «${inv.roomName}»", color = TextPrimary, fontWeight = FontWeight.Medium)
+                                    Row(Modifier.padding(top = 8.dp)) {
+                                        TextButton(onClick = {
+                                            viewModel.joinRoom(inv.roomId, "", displayName) {
+                                                friendsVm.dismissInvite(inv.id)
+                                                onJoinRoom(inv.roomId)
+                                            }
+                                        }) { Text("Присоединиться", color = BlueBright) }
+                                        TextButton(onClick = { friendsVm.dismissInvite(inv.id) }) {
+                                            Text("Отклонить", color = TextMuted)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             when {
                 loading -> CircularProgressIndicator(
                     color = BlueBright,
-                    modifier = Modifier.align(Alignment.Center)
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(24.dp)
                 )
                 rooms.isEmpty() -> Column(
-                    Modifier.align(Alignment.Center).padding(24.dp),
+                    Modifier.fillMaxWidth().padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Image(
@@ -119,7 +152,8 @@ fun RoomsScreen(
                 }
                 else -> LazyColumn(
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     itemsIndexed(rooms, key = { _, r -> r.id }) { index, room ->
                         AnimatedVisibility(
@@ -158,7 +192,8 @@ fun RoomsScreen(
                     }
                 ) { Text(joinError!!) }
             }
-        }
+            } // Column
+        } // Box
     }
 
     if (passwordDialogRoom != null) {

@@ -27,6 +27,8 @@ import com.vergis.vegs.ui.screens.GameScreen
 import com.vergis.vegs.ui.screens.LobbyScreen
 import com.vergis.vegs.ui.screens.RoomsScreen
 import com.vergis.vegs.ui.screens.ProfileScreen
+import com.vergis.vegs.ui.screens.FriendsScreen
+import com.vergis.vegs.viewmodel.FriendsViewModel
 import com.vergis.vegs.ui.theme.GradientBg
 import com.vergis.vegs.ui.theme.VergisTheme
 import com.vergis.vegs.viewmodel.AuthViewModel
@@ -93,8 +95,13 @@ fun VergisNav() {
                         popUpTo(0) { inclusive = true }
                     }
                 },
-                onProfile = { navController.navigate("profile") }
+                onProfile = { navController.navigate("profile") },
+                onFriends = { navController.navigate("friends") }
             )
+        }
+        composable("friends") {
+            val fvm: FriendsViewModel = viewModel()
+            FriendsScreen(viewModel = fvm, onBack = { navController.popBackStack() })
         }
         composable("profile") {
             ProfileScreen(

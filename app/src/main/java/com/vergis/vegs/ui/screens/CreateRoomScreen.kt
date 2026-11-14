@@ -41,6 +41,8 @@ fun CreateRoomScreen(
     var useCustom by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var usePassword by remember { mutableStateOf(false) }
+    var hidden by remember { mutableStateOf(false) }
+    var friendsOnly by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -149,6 +151,24 @@ fun CreateRoomScreen(
                 )
             }
 
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = hidden,
+                    onCheckedChange = { hidden = it },
+                    colors = CheckboxDefaults.colors(checkedColor = BluePrimary, uncheckedColor = TextMuted)
+                )
+                Text("Скрыть комнату", color = TextPrimary, fontSize = 14.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = friendsOnly,
+                    onCheckedChange = { friendsOnly = it },
+                    colors = CheckboxDefaults.colors(checkedColor = BluePrimary, uncheckedColor = TextMuted)
+                )
+                Text("Только друзьям", color = TextPrimary, fontSize = 14.sp)
+            }
+
             if (error != null) {
                 Text(error!!, color = Error, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
             }
@@ -164,6 +184,8 @@ fun CreateRoomScreen(
                         maxPlayers = maxPlayers,
                         theme = finalTheme,
                         password = if (usePassword) password else "",
+                        hidden = hidden,
+                        friendsOnly = friendsOnly,
                         onCreated = onCreated
                     )
                 }

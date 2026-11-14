@@ -42,9 +42,13 @@ class FirebaseRepository {
                     "uid" to uid,
                     "email" to email,
                     "displayName" to displayName,
-                    "avatarUrl" to ""
+                    "avatarUrl" to "",
+                    "nameLower" to displayName.trim().lowercase()
                 )
             ).await()
+            if (displayName.isNotBlank()) {
+                db.child("nameIndex").child(displayName.trim().lowercase()).setValue(uid).await()
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -81,6 +85,9 @@ class FirebaseRepository {
                         continue
                     }
                     if (room.status == "waiting" || room.status == "playing") {
+                        val me = currentUser?.uid
+                        // скрытые — только создателю / участнику
+                        if (room.hidden && me != room.creatorId && me !in room.players) continue
                         list.add(room)
                     }
                 }
@@ -121,7 +128,9 @@ class FirebaseRepository {
         name: String,
         maxPlayers: Int,
         theme: String,
-        password: String
+        password: String,
+        hidden: Boolean = false,
+        friendsOnly: Boolean = false
     ): Result<String> {
         return try {
             val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
@@ -140,6 +149,8 @@ class FirebaseRepository {
                 "maxPlayers" to maxPlayers,
                 "theme" to theme,
                 "password" to password,
+                "hidden" to hidden,
+                "friendsOnly" to friendsOnly,
                 "status" to "waiting",
                 "currentRound" to 0,
                 "currentQuestion" to "",
@@ -150,7 +161,8 @@ class FirebaseRepository {
                         "uid" to user.uid,
                         "name" to playerName,
                         "avatarUrl" to avatar,
-                        "joinedAt" to now
+                        "joinedAt" to now,
+                        "lastSeenAt" to now
                     )
                 ),
                 "answers" to emptyMap<String, String>(),
@@ -174,6 +186,10 @@ class FirebaseRepository {
             if (room.password.isNotEmpty() && room.password != password) {
                 return Result.failure(Exception("Неверный пароль"))
             }
+            if (room.friendsOnly && user.uid != room.creatorId) {
+                val ok = isFriend(user.uid, room.creatorId)
+                if (!ok) return Result.failure(Exception("Только для друзей создателя"))
+            }
             if (room.players.size >= room.maxPlayers && !room.players.containsKey(user.uid)) {
                 return Result.failure(Exception("Комната заполнена"))
             }
@@ -181,11 +197,13 @@ class FirebaseRepository {
                 return Result.success(Unit)
             }
             val profile = getUserProfile(user.uid)
+            val now = System.currentTimeMillis()
             val player = mapOf(
                 "uid" to user.uid,
                 "name" to (profile?.displayName?.takeIf { it.isNotBlank() } ?: playerName),
                 "avatarUrl" to (profile?.avatarUrl ?: ""),
-                "joinedAt" to System.currentTimeMillis()
+                "joinedAt" to now,
+                "lastSeenAt" to now
             )
             db.child("rooms").child(roomId).child("players").child(user.uid).setValue(player).await()
             touchActivity(roomId)
@@ -195,9 +213,21 @@ class FirebaseRepository {
         }
     }
 
-    suspend fun leaveRoom(roomId: String) {
+    suspend fun leaveRoom(roomId: String, reason: String = "left") {
         val user = currentUser ?: return
         try {
+            val profile = getUserProfile(user.uid)
+            val name = profile?.displayName?.takeIf { it.isNotBlank() } ?: user.displayName ?: "Игрок"
+            // event for others
+            val ev = db.child("rooms").child(roomId).child("events").push()
+            ev.setValue(
+                mapOf(
+                    "type" to reason,
+                    "uid" to user.uid,
+                    "name" to name,
+                    "timestamp" to System.currentTimeMillis()
+                )
+            ).await()
             db.child("rooms").child(roomId).child("players").child(user.uid).removeValue().await()
             db.child("rooms").child(roomId).child("answers").child(user.uid).removeValue().await()
             db.child("rooms").child(roomId).child("readyForNext").child(user.uid).removeValue().await()
@@ -206,6 +236,37 @@ class FirebaseRepository {
                 db.child("rooms").child(roomId).removeValue().await()
             } else {
                 touchActivity(roomId)
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun heartbeat(roomId: String) {
+        val user = currentUser ?: return
+        try {
+            val now = System.currentTimeMillis()
+            db.child("rooms").child(roomId).child("players").child(user.uid)
+                .child("lastSeenAt").setValue(now).await()
+            touchActivity(roomId)
+        } catch (_: Exception) {}
+    }
+
+    suspend fun kickAfk(roomId: String, uid: String, name: String) {
+        try {
+            val ev = db.child("rooms").child(roomId).child("events").push()
+            ev.setValue(
+                mapOf(
+                    "type" to "afk",
+                    "uid" to uid,
+                    "name" to name,
+                    "timestamp" to System.currentTimeMillis()
+                )
+            ).await()
+            db.child("rooms").child(roomId).child("players").child(uid).removeValue().await()
+            db.child("rooms").child(roomId).child("answers").child(uid).removeValue().await()
+            db.child("rooms").child(roomId).child("readyForNext").child(uid).removeValue().await()
+            val snap = db.child("rooms").child(roomId).child("players").get().await()
+            if (!snap.exists() || snap.childrenCount == 0L) {
+                db.child("rooms").child(roomId).removeValue().await()
             }
         } catch (_: Exception) {}
     }
@@ -295,7 +356,8 @@ class FirebaseRepository {
             val profile = UserProfileChangeRequest.Builder().setDisplayName(name).build()
             user.updateProfile(profile).await()
             db.child("users").child(user.uid).child("displayName").setValue(name).await()
-            // обновить имя во всех waiting комнатах где я есть
+            db.child("users").child(user.uid).child("nameLower").setValue(name.trim().lowercase()).await()
+            db.child("nameIndex").child(name.trim().lowercase()).setValue(user.uid).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -405,6 +467,247 @@ class FirebaseRepository {
         awaitClose { db.child("rooms").child(roomId).child("chat").removeEventListener(listener) }
     }
 
+
+    suspend fun searchUsers(query: String): List<UserProfile> {
+        val q = query.trim().lowercase()
+        if (q.length < 2) return emptyList()
+        return try {
+            val snap = db.child("users").get().await()
+            val me = currentUser?.uid
+            snap.children.mapNotNull { c ->
+                val uid = c.key ?: return@mapNotNull null
+                if (uid == me) return@mapNotNull null
+                val name = c.child("displayName").getValue(String::class.java) ?: ""
+                val lower = c.child("nameLower").getValue(String::class.java) ?: name.lowercase()
+                if (!lower.contains(q) && !name.lowercase().contains(q)) return@mapNotNull null
+                UserProfile(
+                    uid = uid,
+                    email = c.child("email").getValue(String::class.java) ?: "",
+                    displayName = name,
+                    avatarUrl = c.child("avatarUrl").getValue(String::class.java) ?: ""
+                )
+            }.take(30)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun isFriend(a: String, b: String): Boolean {
+        return try {
+            val snap = db.child("friends").child(a).child(b).get().await()
+            snap.exists() && (snap.child("status").getValue(String::class.java) == "accepted")
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun sendFriendRequest(toUid: String): Result<Unit> {
+        val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
+        if (toUid == user.uid) return Result.failure(Exception("Нельзя добавить себя"))
+        return try {
+            if (isFriend(user.uid, toUid)) return Result.failure(Exception("Уже в друзьях"))
+            val me = getUserProfile(user.uid)
+            val now = System.currentTimeMillis()
+            db.child("friendRequests").child(toUid).child(user.uid).setValue(
+                mapOf(
+                    "fromUid" to user.uid,
+                    "fromName" to (me?.displayName ?: "Игрок"),
+                    "fromAvatar" to (me?.avatarUrl ?: ""),
+                    "timestamp" to now
+                )
+            ).await()
+            db.child("friends").child(user.uid).child(toUid).setValue(
+                mapOf("status" to "pending_out", "since" to now)
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun acceptFriend(fromUid: String): Result<Unit> {
+        val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
+        return try {
+            val now = System.currentTimeMillis()
+            val other = getUserProfile(fromUid)
+            val me = getUserProfile(user.uid)
+            db.child("friends").child(user.uid).child(fromUid).setValue(
+                mapOf(
+                    "status" to "accepted",
+                    "since" to now,
+                    "name" to (other?.displayName ?: ""),
+                    "avatarUrl" to (other?.avatarUrl ?: "")
+                )
+            ).await()
+            db.child("friends").child(fromUid).child(user.uid).setValue(
+                mapOf(
+                    "status" to "accepted",
+                    "since" to now,
+                    "name" to (me?.displayName ?: ""),
+                    "avatarUrl" to (me?.avatarUrl ?: "")
+                )
+            ).await()
+            db.child("friendRequests").child(user.uid).child(fromUid).removeValue().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun rejectFriend(fromUid: String) {
+        val user = currentUser ?: return
+        try {
+            db.child("friendRequests").child(user.uid).child(fromUid).removeValue().await()
+            db.child("friends").child(fromUid).child(user.uid).removeValue().await()
+        } catch (_: Exception) {}
+    }
+
+    suspend fun removeFriend(friendUid: String) {
+        val user = currentUser ?: return
+        try {
+            db.child("friends").child(user.uid).child(friendUid).removeValue().await()
+            db.child("friends").child(friendUid).child(user.uid).removeValue().await()
+        } catch (_: Exception) {}
+    }
+
+    fun observeFriends(): Flow<List<FriendEntry>> = callbackFlow {
+        val uid = currentUser?.uid
+        if (uid == null) {
+            trySend(emptyList()); close(); return@callbackFlow
+        }
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<FriendEntry>()
+                for (c in snapshot.children) {
+                    val fuid = c.key ?: continue
+                    val status = c.child("status").getValue(String::class.java) ?: "accepted"
+                    if (status != "accepted") continue
+                    list.add(
+                        FriendEntry(
+                            uid = fuid,
+                            name = c.child("name").getValue(String::class.java) ?: "",
+                            avatarUrl = c.child("avatarUrl").getValue(String::class.java) ?: "",
+                            status = status,
+                            since = c.child("since").getValue(Long::class.java) ?: 0L
+                        )
+                    )
+                }
+                trySend(list.sortedBy { it.name.lowercase() })
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        db.child("friends").child(uid).addValueEventListener(listener)
+        awaitClose { db.child("friends").child(uid).removeEventListener(listener) }
+    }
+
+    fun observeFriendRequests(): Flow<List<FriendEntry>> = callbackFlow {
+        val uid = currentUser?.uid
+        if (uid == null) {
+            trySend(emptyList()); close(); return@callbackFlow
+        }
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<FriendEntry>()
+                for (c in snapshot.children) {
+                    val fuid = c.key ?: continue
+                    list.add(
+                        FriendEntry(
+                            uid = fuid,
+                            name = c.child("fromName").getValue(String::class.java) ?: "",
+                            avatarUrl = c.child("fromAvatar").getValue(String::class.java) ?: "",
+                            status = "pending_in",
+                            since = c.child("timestamp").getValue(Long::class.java) ?: 0L
+                        )
+                    )
+                }
+                trySend(list)
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        db.child("friendRequests").child(uid).addValueEventListener(listener)
+        awaitClose { db.child("friendRequests").child(uid).removeEventListener(listener) }
+    }
+
+    suspend fun sendRoomInvite(toUid: String, roomId: String, roomName: String): Result<Unit> {
+        val user = currentUser ?: return Result.failure(Exception("Не авторизован"))
+        return try {
+            val me = getUserProfile(user.uid)
+            val ref = db.child("invites").child(toUid).push()
+            ref.setValue(
+                mapOf(
+                    "roomId" to roomId,
+                    "roomName" to roomName,
+                    "fromUid" to user.uid,
+                    "fromName" to (me?.displayName ?: "Игрок"),
+                    "fromAvatar" to (me?.avatarUrl ?: ""),
+                    "timestamp" to System.currentTimeMillis()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun observeInvites(): Flow<List<RoomInvite>> = callbackFlow {
+        val uid = currentUser?.uid
+        if (uid == null) {
+            trySend(emptyList()); close(); return@callbackFlow
+        }
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<RoomInvite>()
+                for (c in snapshot.children) {
+                    list.add(
+                        RoomInvite(
+                            id = c.key ?: continue,
+                            roomId = c.child("roomId").getValue(String::class.java) ?: "",
+                            roomName = c.child("roomName").getValue(String::class.java) ?: "",
+                            fromUid = c.child("fromUid").getValue(String::class.java) ?: "",
+                            fromName = c.child("fromName").getValue(String::class.java) ?: "",
+                            fromAvatar = c.child("fromAvatar").getValue(String::class.java) ?: "",
+                            timestamp = c.child("timestamp").getValue(Long::class.java) ?: 0L
+                        )
+                    )
+                }
+                trySend(list.sortedByDescending { it.timestamp })
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        db.child("invites").child(uid).addValueEventListener(listener)
+        awaitClose { db.child("invites").child(uid).removeEventListener(listener) }
+    }
+
+    suspend fun dismissInvite(inviteId: String) {
+        val uid = currentUser?.uid ?: return
+        try {
+            db.child("invites").child(uid).child(inviteId).removeValue().await()
+        } catch (_: Exception) {}
+    }
+
+    fun observeRoomEvents(roomId: String): Flow<List<RoomEvent>> = callbackFlow {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val list = mutableListOf<RoomEvent>()
+                for (c in snapshot.children) {
+                    list.add(
+                        RoomEvent(
+                            id = c.key ?: continue,
+                            type = c.child("type").getValue(String::class.java) ?: "",
+                            uid = c.child("uid").getValue(String::class.java) ?: "",
+                            name = c.child("name").getValue(String::class.java) ?: "",
+                            timestamp = c.child("timestamp").getValue(Long::class.java) ?: 0L
+                        )
+                    )
+                }
+                trySend(list.sortedBy { it.timestamp }.takeLast(20))
+            }
+            override fun onCancelled(error: DatabaseError) {}
+        }
+        db.child("rooms").child(roomId).child("events").addValueEventListener(listener)
+        awaitClose { db.child("rooms").child(roomId).child("events").removeEventListener(listener) }
+    }
+
     private fun parseRoom(snapshot: DataSnapshot): RoomInfo? {
         if (!snapshot.exists()) return null
         val id = snapshot.key ?: return null
@@ -419,6 +722,8 @@ class FirebaseRepository {
         val nextQuestion = snapshot.child("nextQuestion").getValue(String::class.java) ?: ""
         val createdAt = snapshot.child("createdAt").getValue(Long::class.java) ?: 0L
         val lastActivityAt = snapshot.child("lastActivityAt").getValue(Long::class.java) ?: createdAt
+        val hidden = snapshot.child("hidden").getValue(Boolean::class.java) ?: false
+        val friendsOnly = snapshot.child("friendsOnly").getValue(Boolean::class.java) ?: false
 
         val players = mutableMapOf<String, PlayerInfo>()
         for (p in snapshot.child("players").children) {
@@ -426,7 +731,8 @@ class FirebaseRepository {
             val pname = p.child("name").getValue(String::class.java) ?: "Игрок"
             val avatar = p.child("avatarUrl").getValue(String::class.java) ?: ""
             val joined = p.child("joinedAt").getValue(Long::class.java) ?: 0L
-            players[uid] = PlayerInfo(uid, pname, avatar, joined)
+            val lastSeen = p.child("lastSeenAt").getValue(Long::class.java) ?: joined
+            players[uid] = PlayerInfo(uid, pname, avatar, joined, lastSeen)
         }
 
         val answers = mutableMapOf<String, String>()
@@ -462,7 +768,9 @@ class FirebaseRepository {
             answers = answers,
             readyForNext = ready,
             usedQuestions = usedQuestions,
-            lastActivityAt = lastActivityAt
+            lastActivityAt = lastActivityAt,
+            hidden = hidden,
+            friendsOnly = friendsOnly
         )
     }
 }

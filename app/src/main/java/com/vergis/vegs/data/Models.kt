@@ -16,14 +16,17 @@ data class RoomInfo(
     val answers: Map<String, String> = emptyMap(),
     val readyForNext: Map<String, Boolean> = emptyMap(),
     val usedQuestions: List<String> = emptyList(),
-    val lastActivityAt: Long = System.currentTimeMillis()
+    val lastActivityAt: Long = System.currentTimeMillis(),
+    val hidden: Boolean = false,
+    val friendsOnly: Boolean = false
 )
 
 data class PlayerInfo(
     val uid: String = "",
     val name: String = "",
     val avatarUrl: String = "",
-    val joinedAt: Long = System.currentTimeMillis()
+    val joinedAt: Long = System.currentTimeMillis(),
+    val lastSeenAt: Long = System.currentTimeMillis()
 )
 
 data class UserProfile(
@@ -39,6 +42,32 @@ data class ChatMessage(
     val name: String = "",
     val avatarUrl: String = "",
     val text: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class FriendEntry(
+    val uid: String = "",
+    val name: String = "",
+    val avatarUrl: String = "",
+    val status: String = "accepted", // accepted | pending_out | pending_in
+    val since: Long = System.currentTimeMillis()
+)
+
+data class RoomInvite(
+    val id: String = "",
+    val roomId: String = "",
+    val roomName: String = "",
+    val fromUid: String = "",
+    val fromName: String = "",
+    val fromAvatar: String = "",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+data class RoomEvent(
+    val id: String = "",
+    val type: String = "", // left | afk
+    val uid: String = "",
+    val name: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 
